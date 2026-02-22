@@ -82,6 +82,9 @@
             align-items: center;
             margin-top: 10px;
         }
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -89,9 +92,22 @@
         <h2>Update Acquisition Task</h2>
         
         <form id="taskForm">
-            <label for="taskId">Select Task:</label>
-            <select id="taskId" required>
-                <option value="">Loading tasks...</option>
+            <!-- STEP 1: Select Phase (Super Parent) -->
+            <label for="phaseSelect">1. Select Phase:</label>
+            <select id="phaseSelect" required>
+                <option value="">Loading phases...</option>
+            </select>
+            
+            <!-- STEP 2: Select Category (2nd Parent) -->
+            <label for="categorySelect">2. Select Category:</label>
+            <select id="categorySelect" required disabled>
+                <option value="">First select a phase...</option>
+            </select>
+            
+            <!-- STEP 3: Select Task -->
+            <label for="taskSelect">3. Select Task:</label>
+            <select id="taskSelect" required disabled>
+                <option value="">First select a category...</option>
             </select>
             
             <div class="checkbox-container">
@@ -123,11 +139,16 @@
             NOTES: 'long_text_mm0thdhe'
         };
         
-        window.addEventListener('load', loadTasks);
+        // Store board structure
+        let boardData = null;
+        
+        // Initialize
+        window.addEventListener('load', loadPhases);
+        document.getElementById('phaseSelect').addEventListener('change', onPhaseChange);
+        document.getElementById('categorySelect').addEventListener('change', onCategoryChange);
         document.getElementById('taskForm').addEventListener('submit', updateTask);
         
-        async function loadTasks() {
-            // SIMPLIFIED: Only load 2 levels at a time
+        async function loadPhases() {
             const query = `
                 query {
                     boards(ids: ${BOARD_ID}) {
@@ -162,28 +183,112 @@
                     return;
                 }
                 
-                const select = document.getElementById('taskId');
-                select.innerHTML = '<option value="">Select a task...</option>';
+                boardData = data.data.boards[0].items_page.items;
                 
-                const items = data.data.boards[0].items_page.items;
+                // Populate phase dropdown
+                const phaseSelect = document.getElementById('phaseSelect');
+                phaseSelect.innerHTML = '<option value="">Select a phase...</option>';
                 
-                items.forEach(item => {
-                    // Add parent
+                boardData.forEach(phase => {
                     const option = document.createElement('option');
-                    option.value = item.id;
-                    option.textContent = item.name;
-                    select.appendChild(option);
-                    
-                    // Add subitems
-                    if (item.subitems) {
-                        item.subitems.forEach(sub => {
-                            const subOption = document.createElement('option');
-                            subOption.value = sub.id;
-                            subOption.textContent = '  → ' + sub.name;
-                            select.appendChild(subOption);
-                        });
-                    }
+                    option.value = phase.id;
+                    option.textContent = phase.name;
+                    phaseSelect.appendChild(option);
                 });
+                
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
+        
+        async function onPhaseChange(e) {
+            const phaseId = e.target.value;
+            const categorySelect = document.getElementById('categorySelect');
+            const taskSelect = document.getElementById('taskSelect');
+            
+            // Reset dependent dropdowns
+            categorySelect.innerHTML = '<option value="">Select a category...</option>';
+            categorySelect.disabled = true;
+            taskSelect.innerHTML = '<option value="">First select a category...</option>';
+            taskSelect.disabled = true;
+            
+            if (!phaseId) return;
+            
+            // Find selected phase
+            const selectedPhase = boardData.find(p => p.id === phaseId);
+            
+            if (!selectedPhase || !selectedPhase.subitems || selectedPhase.subitems.length === 0) {
+                categorySelect.innerHTML = '<option value="">No categories available</option>';
+                return;
+            }
+            
+            // Populate categories
+            categorySelect.disabled = false;
+            selectedPhase.subitems.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category.id;
+                option.textContent = category.name;
+                option.dataset.phaseId = phaseId;
+                categorySelect.appendChild(option);
+            });
+        }
+        
+        async function onCategoryChange(e) {
+            const categoryId = e.target.value;
+            const taskSelect = document.getElementById('taskSelect');
+            
+            // Reset task dropdown
+            taskSelect.innerHTML = '<option value="">Loading tasks...</option>';
+            taskSelect.disabled = true;
+            
+            if (!categoryId) return;
+            
+            // Load tasks for this category (3rd level)
+            const query = `
+                query {
+                    items(ids: [${categoryId}]) {
+                        id
+                        name
+                        subitems {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+            
+            try {
+                const response = await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
+                });
+                
+                const data = await response.json();
+                
+                if (data.errors) {
+                    showResult('Error: ' + data.errors[0].message, 'error');
+                    return;
+                }
+                
+                const category = data.data.items[0];
+                
+                taskSelect.innerHTML = '<option value="">Select a task...</option>';
+                
+                if (category.subitems && category.subitems.length > 0) {
+                    taskSelect.disabled = false;
+                    category.subitems.forEach(task => {
+                        const option = document.createElement('option');
+                        option.value = task.id;
+                        option.textContent = task.name;
+                        taskSelect.appendChild(option);
+                    });
+                } else {
+                    taskSelect.innerHTML = '<option value="">No tasks available</option>';
+                }
                 
             } catch (error) {
                 showResult('Error: ' + error.message, 'error');
@@ -193,7 +298,7 @@
         async function updateTask(e) {
             e.preventDefault();
             
-            const taskId = document.getElementById('taskId').value;
+            const taskId = document.getElementById('taskSelect').value;
             const completed = document.getElementById('completed').checked;
             const notes = document.getElementById('notes').value;
             const fileInput = document.getElementById('fileUpload');
@@ -287,6 +392,7 @@
                 
                 showResult('✅ Task updated successfully!', 'success');
                 document.getElementById('taskForm').reset();
+                loadPhases(); // Reload to reset dropdowns
                 
             } catch (error) {
                 showResult('Error: ' + error.message, 'error');
