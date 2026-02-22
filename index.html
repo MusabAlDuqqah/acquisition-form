@@ -219,9 +219,6 @@
     
     if (!propertyId) return;
     
-    console.log('=== LOADING CHECKLISTS FOR PROPERTY:', propertyId, '===');
-    
-    // Load ALL subitems
     const query = `
         query {
             items(ids: [${propertyId}]) {
@@ -246,7 +243,6 @@
         });
         
         const data = await response.json();
-        console.log('RAW DATA:', data);
         
         if (data.errors) {
             showResult('Error: ' + data.errors[0].message, 'error');
@@ -254,16 +250,25 @@
         }
         
         const allSubitems = data.data.items[0].subitems;
-        console.log('TOTAL SUBITEMS:', allSubitems.length);
-        console.log('FIRST 5 SUBITEMS:', allSubitems.slice(0, 5));
         
-        // Check each one
+        // SMART FILTER: Look for items that are likely checklists
+        // Based on your board: "Transition To Ops", "DD (copy)", "Underwriting (copy)", etc.
+        const potentialChecklists = allSubitems.filter(item => 
+            item.name.includes('(copy)') || 
+            item.name === 'Transition To Ops' ||
+            item.name === 'DD' ||
+            item.name === 'Underwriting' ||
+            item.name === 'Close out' ||
+            item.name.match(/^[A-Z][a-z]+\s+(To|&)/) // Matches "Transition To" or "Title &"
+        );
+        
+        console.log('Filtered to potential checklists:', potentialChecklists.length);
+        console.log('Names:', potentialChecklists.map(c => c.name));
+        
+        // Now check only these for subitems
         const checklists = [];
         
-        for (let i = 0; i < allSubitems.length; i++) {
-            const item = allSubitems[i];
-            console.log(`Checking item ${i + 1}/${allSubitems.length}: ${item.name} (ID: ${item.id})`);
-            
+        for (const item of potentialChecklists) {
             const checkQuery = `
                 query {
                     items(ids: [${item.id}]) {
@@ -271,7 +276,6 @@
                         name
                         subitems {
                             id
-                            name
                         }
                     }
                 }
@@ -287,12 +291,8 @@
             });
             
             const checkData = await checkResponse.json();
-            const hasSubitems = checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0;
             
-            console.log(`  -> Has ${checkData.data.items[0].subitems?.length || 0} subitems`);
-            
-            if (hasSubitems) {
-                console.log(`  -> ✅ THIS IS A CHECKLIST!`);
+            if (checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0) {
                 checklists.push(item);
             }
         }
@@ -306,15 +306,14 @@
             checklists.forEach(checklist => {
                 const option = document.createElement('option');
                 option.value = checklist.id;
-                option.textContent = checklist.name;
+                option.textContent = checklist.name.replace(' (copy)', '');
                 checklistSelect.appendChild(option);
             });
         } else {
-            checklistSelect.innerHTML = '<option value="">No checklists found (check console)</option>';
+            checklistSelect.innerHTML = '<option value="">No checklists found</option>';
         }
         
     } catch (error) {
-        console.error('ERROR:', error);
         showResult('Error: ' + error.message, 'error');
     }
 }
