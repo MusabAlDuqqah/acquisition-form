@@ -257,7 +257,7 @@
             
             if (!propertyId) return;
             
-            // OPTIMIZED: Get ALL subitems at once with their subitem counts
+            // OPTIMIZED: Get ALL subitems with their children's children (3 levels deep)
             const query = `
                 query {
                     items(ids: [${propertyId}]) {
@@ -268,6 +268,10 @@
                             name
                             subitems {
                                 id
+                                name
+                                subitems {
+                                    id
+                                }
                             }
                         }
                     }
@@ -293,14 +297,22 @@
                 
                 const allSubitems = data.data.items[0].subitems;
                 
-                // Filter: Only show items with 5+ subitems (main checklists)
-                // This filters out small groups and shows only: Transition To Ops, DD, Close out
-                const checklists = allSubitems.filter(item => 
-                    item.subitems && item.subitems.length >= 5
-                );
+                // Filter: Only show items where their children ALSO have children
+                // Main Checklist: Has categories → which have tasks (3 levels)
+                // Category: Has only tasks (2 levels) ❌
+                const checklists = allSubitems.filter(item => {
+                    if (!item.subitems || item.subitems.length === 0) return false;
+                    
+                    // Check if ANY of this item's subitems have their own subitems
+                    const hasGrandchildren = item.subitems.some(sub => 
+                        sub.subitems && sub.subitems.length > 0
+                    );
+                    
+                    return hasGrandchildren;
+                });
                 
                 console.log('Found checklists:', checklists.length);
-                console.log('Names:', checklists.map(c => `${c.name} (${c.subitems.length} items)`));
+                console.log('Names:', checklists.map(c => `${c.name} (${c.subitems.length} categories)`));
                 
                 checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
                 
