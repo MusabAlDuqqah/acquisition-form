@@ -87,6 +87,26 @@
             margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 2px solid #0073ea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .category-progress {
+            font-size: 14px;
+            color: #666;
+            font-weight: normal;
+        }
+        .progress-bar {
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #4caf50;
+            transition: width 0.3s;
         }
         .task-item {
             display: flex;
@@ -101,6 +121,10 @@
         .task-item:hover {
             background: #f0f7ff;
         }
+        .task-item.completed {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
         .task-checkbox {
             width: 20px;
             height: 20px;
@@ -110,6 +134,32 @@
         .task-name {
             flex: 1;
             color: #333;
+        }
+        .task-name.completed {
+            color: #666;
+        }
+        .status-badges {
+            display: flex;
+            gap: 5px;
+            margin-left: 10px;
+        }
+        .badge {
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .badge-completed {
+            background: #4caf50;
+            color: white;
+        }
+        .badge-notes {
+            background: #2196f3;
+            color: white;
+        }
+        .badge-files {
+            background: #ff9800;
+            color: white;
         }
         .task-details {
             margin-top: 10px;
@@ -135,6 +185,27 @@
             width: 100%;
             padding: 8px;
             margin-top: 5px;
+        }
+        .existing-files {
+            margin-top: 10px;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .existing-files ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .existing-files li {
+            margin: 3px 0;
+        }
+        .existing-files a {
+            color: #0073ea;
+            text-decoration: none;
+        }
+        .existing-files a:hover {
+            text-decoration: underline;
         }
         .expand-btn {
             background: #f0f0f0;
@@ -176,6 +247,13 @@
 
     <!-- Tasks Container -->
     <div id="tasksContainer" class="form-container">
+        <div id="overallProgress" style="margin-bottom: 20px; padding: 15px; background: #f5f5f5; border-radius: 6px; display: none;">
+            <h4 style="margin: 0 0 10px 0;">Overall Progress</h4>
+            <div class="progress-bar" style="height: 20px; margin-bottom: 10px;">
+                <div id="overallProgressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div id="overallProgressText" style="text-align: center; font-weight: bold;"></div>
+        </div>
         <h3>Tasks</h3>
         <div id="tasksList"></div>
         <button id="saveBtn" onclick="saveTasks()">Save All Changes</button>
@@ -424,12 +502,33 @@
                 const categoriesWithTasks = tasksData.data.items;
                 let html = '';
                 allTasks = [];
+                let totalTasksCount = 0;
+                let completedTasksCount = 0;
                 
                 categoriesWithTasks.forEach(category => {
                     if (category.subitems && category.subitems.length > 0) {
+                        // Calculate completion percentage
+                        const totalTasks = category.subitems.length;
+                        totalTasksCount += totalTasks;
+                        const completedTasks = category.subitems.filter(task => {
+                            const checkboxColumn = task.column_values.find(cv => cv.id === COLUMNS.CHECKBOX);
+                            const isCompleted = checkboxColumn && checkboxColumn.value && JSON.parse(checkboxColumn.value).checked;
+                            if (isCompleted) completedTasksCount++;
+                            return isCompleted;
+                        }).length;
+                        const percentage = Math.round((completedTasks / totalTasks) * 100);
+                        
                         html += `
                             <div class="category-section">
-                                <div class="category-title">${category.name.replace(' (copy)', '')}</div>
+                                <div>
+                                    <div class="category-title">
+                                        <span>${category.name.replace(' (copy)', '')}</span>
+                                        <span class="category-progress">${completedTasks}/${totalTasks} completed (${percentage}%)</span>
+                                    </div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${percentage}%"></div>
+                                    </div>
+                                </div>
                         `;
                         
                         category.subitems.forEach((task, index) => {
@@ -439,6 +538,17 @@
                             const notesColumn = task.column_values.find(cv => cv.id === COLUMNS.NOTES);
                             const existingNotes = notesColumn && notesColumn.value ? JSON.parse(notesColumn.value) : '';
                             
+                            const filesColumn = task.column_values.find(cv => cv.id === COLUMNS.FILES);
+                            let existingFiles = [];
+                            if (filesColumn && filesColumn.value) {
+                                try {
+                                    const filesData = JSON.parse(filesColumn.value);
+                                    existingFiles = filesData.files || [];
+                                } catch (e) {
+                                    existingFiles = [];
+                                }
+                            }
+                            
                             allTasks.push({
                                 id: task.id,
                                 name: task.name,
@@ -447,20 +557,40 @@
                             });
                             
                             const taskDivId = `task-${task.id}`;
+                            const hasNotes = existingNotes && existingNotes.length > 0;
+                            const hasFiles = existingFiles.length > 0;
                             
                             html += `
-                                <div class="task-item">
+                                <div class="task-item ${isChecked ? 'completed' : ''}">
                                     <input type="checkbox" 
                                            class="task-checkbox" 
                                            data-task-id="${task.id}"
+                                           onchange="updateTaskStatus('${task.id}')"
                                            ${isChecked ? 'checked' : ''}>
-                                    <span class="task-name">${task.name}</span>
-                                    <button type="button" class="expand-btn" onclick="toggleDetails('${taskDivId}')">+ Add Details</button>
+                                    <span class="task-name ${isChecked ? 'completed' : ''}">${task.name}</span>
+                                    <div class="status-badges">
+                                        ${isChecked ? '<span class="badge badge-completed">✓ Done</span>' : ''}
+                                        ${hasNotes ? '<span class="badge badge-notes">📝 Notes</span>' : ''}
+                                        ${hasFiles ? '<span class="badge badge-files">📎 ' + existingFiles.length + ' file(s)</span>' : ''}
+                                    </div>
+                                    <button type="button" class="expand-btn" onclick="toggleDetails('${taskDivId}')">
+                                        ${hasNotes || hasFiles ? '📋 View Details' : '+ Add Details'}
+                                    </button>
                                 </div>
                                 <div id="${taskDivId}" class="task-details">
                                     <label>Notes:</label>
                                     <textarea class="task-notes" data-task-id="${task.id}" placeholder="Add notes...">${existingNotes}</textarea>
-                                    <label style="margin-top: 10px; display: block;">Upload File:</label>
+                                    
+                                    ${hasFiles ? `
+                                    <div class="existing-files">
+                                        <strong>📎 Existing Files:</strong>
+                                        <ul>
+                                            ${existingFiles.map(file => `<li><a href="${file.url}" target="_blank">${file.name}</a></li>`).join('')}
+                                        </ul>
+                                    </div>
+                                    ` : ''}
+                                    
+                                    <label style="margin-top: 10px; display: block;">Upload ${hasFiles ? 'Additional' : ''} File:</label>
                                     <input type="file" class="task-file" data-task-id="${task.id}">
                                 </div>
                             `;
@@ -472,8 +602,28 @@
                 
                 tasksList.innerHTML = html || '<p>No tasks found in this checklist.</p>';
                 
+                // Show overall progress
+                const overallPercentage = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+                document.getElementById('overallProgress').style.display = 'block';
+                document.getElementById('overallProgressFill').style.width = overallPercentage + '%';
+                document.getElementById('overallProgressText').textContent = `${completedTasksCount} of ${totalTasksCount} tasks completed (${overallPercentage}%)`;
+                
             } catch (error) {
                 showResult('Error: ' + error.message, 'error');
+            }
+        }
+        
+        function updateTaskStatus(taskId) {
+            const checkbox = document.querySelector(`.task-checkbox[data-task-id="${taskId}"]`);
+            const taskItem = checkbox.closest('.task-item');
+            const taskName = taskItem.querySelector('.task-name');
+            
+            if (checkbox.checked) {
+                taskItem.classList.add('completed');
+                taskName.classList.add('completed');
+            } else {
+                taskItem.classList.remove('completed');
+                taskName.classList.remove('completed');
             }
         }
         
