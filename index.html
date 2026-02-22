@@ -111,6 +111,43 @@
             flex: 1;
             color: #333;
         }
+        .task-details {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            display: none;
+        }
+        .task-details.active {
+            display: block;
+        }
+        .task-details textarea {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+            box-sizing: border-box;
+        }
+        .task-details input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+        }
+        .expand-btn {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 4px 10px;
+            margin-left: 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .expand-btn:hover {
+            background: #e0e0e0;
+        }
         .loading {
             text-align: center;
             padding: 20px;
@@ -151,7 +188,8 @@
         
         const COLUMNS = {
             CHECKBOX: 'boolean_mm0tgjha',
-            NOTES: 'long_text_mm0thdhe'
+            NOTES: 'long_text_mm0thdhe',
+            FILES: 'file_mm0t6adw'
         };
         
         let allTasks = [];
@@ -255,13 +293,14 @@
                 
                 const allSubitems = data.data.items[0].subitems;
                 
-                // Filter: Keep only items that have subitems (checklists)
+                // Filter: Only show items with 5+ subitems (main checklists)
+                // This filters out small groups and shows only: Transition To Ops, DD, Close out
                 const checklists = allSubitems.filter(item => 
-                    item.subitems && item.subitems.length > 0
+                    item.subitems && item.subitems.length >= 5
                 );
                 
                 console.log('Found checklists:', checklists.length);
-                console.log('Names:', checklists.map(c => c.name));
+                console.log('Names:', checklists.map(c => `${c.name} (${c.subitems.length} items)`));
                 
                 checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
                 
@@ -381,9 +420,12 @@
                                 <div class="category-title">${category.name.replace(' (copy)', '')}</div>
                         `;
                         
-                        category.subitems.forEach(task => {
+                        category.subitems.forEach((task, index) => {
                             const checkboxColumn = task.column_values.find(cv => cv.id === COLUMNS.CHECKBOX);
                             const isChecked = checkboxColumn && checkboxColumn.value ? JSON.parse(checkboxColumn.value).checked : false;
+                            
+                            const notesColumn = task.column_values.find(cv => cv.id === COLUMNS.NOTES);
+                            const existingNotes = notesColumn && notesColumn.value ? JSON.parse(notesColumn.value) : '';
                             
                             allTasks.push({
                                 id: task.id,
@@ -392,6 +434,8 @@
                                 checked: isChecked
                             });
                             
+                            const taskDivId = `task-${task.id}`;
+                            
                             html += `
                                 <div class="task-item">
                                     <input type="checkbox" 
@@ -399,6 +443,13 @@
                                            data-task-id="${task.id}"
                                            ${isChecked ? 'checked' : ''}>
                                     <span class="task-name">${task.name}</span>
+                                    <button type="button" class="expand-btn" onclick="toggleDetails('${taskDivId}')">+ Add Details</button>
+                                </div>
+                                <div id="${taskDivId}" class="task-details">
+                                    <label>Notes:</label>
+                                    <textarea class="task-notes" data-task-id="${task.id}" placeholder="Add notes...">${existingNotes}</textarea>
+                                    <label style="margin-top: 10px; display: block;">Upload File:</label>
+                                    <input type="file" class="task-file" data-task-id="${task.id}">
                                 </div>
                             `;
                         });
@@ -414,6 +465,11 @@
             }
         }
         
+        function toggleDetails(taskDivId) {
+            const detailsDiv = document.getElementById(taskDivId);
+            detailsDiv.classList.toggle('active');
+        }
+        
         async function saveTasks() {
             const checkboxes = document.querySelectorAll('.task-checkbox');
             const saveBtn = document.getElementById('saveBtn');
@@ -421,35 +477,107 @@
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';
             
+            let successCount = 0;
+            let errorCount = 0;
+            
             try {
                 for (const checkbox of checkboxes) {
                     const taskId = checkbox.dataset.taskId;
                     const isChecked = checkbox.checked;
                     
-                    const query = `
-                        mutation {
-                            change_simple_column_value(
-                                item_id: ${taskId},
-                                board_id: ${BOARD_ID},
-                                column_id: "${COLUMNS.CHECKBOX}",
-                                value: ${JSON.stringify(JSON.stringify({ checked: isChecked }))}
-                            ) {
-                                id
+                    try {
+                        // Update checkbox
+                        const checkboxQuery = `
+                            mutation {
+                                change_simple_column_value(
+                                    item_id: ${taskId},
+                                    board_id: ${BOARD_ID},
+                                    column_id: "${COLUMNS.CHECKBOX}",
+                                    value: ${JSON.stringify(JSON.stringify({ checked: isChecked }))}
+                                ) {
+                                    id
+                                }
                             }
+                        `;
+                        
+                        await fetch('https://api.monday.com/v2', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': API_KEY,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ query: checkboxQuery })
+                        });
+                        
+                        // Update notes if provided
+                        const notesTextarea = document.querySelector(`.task-notes[data-task-id="${taskId}"]`);
+                        if (notesTextarea && notesTextarea.value.trim()) {
+                            const notesQuery = `
+                                mutation {
+                                    change_simple_column_value(
+                                        item_id: ${taskId},
+                                        board_id: ${BOARD_ID},
+                                        column_id: "${COLUMNS.NOTES}",
+                                        value: ${JSON.stringify(JSON.stringify(notesTextarea.value.trim()))}
+                                    ) {
+                                        id
+                                    }
+                                }
+                            `;
+                            
+                            await fetch('https://api.monday.com/v2', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': API_KEY,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ query: notesQuery })
+                            });
                         }
-                    `;
-                    
-                    await fetch('https://api.monday.com/v2', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': API_KEY,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ query })
-                    });
+                        
+                        // Upload file if provided
+                        const fileInput = document.querySelector(`.task-file[data-task-id="${taskId}"]`);
+                        if (fileInput && fileInput.files.length > 0) {
+                            const file = fileInput.files[0];
+                            const formData = new FormData();
+                            
+                            const fileQuery = `
+                                mutation($file: File!) {
+                                    add_file_to_column(
+                                        item_id: ${taskId},
+                                        column_id: "${COLUMNS.FILES}",
+                                        file: $file
+                                    ) {
+                                        id
+                                    }
+                                }
+                            `;
+                            
+                            formData.append('query', fileQuery);
+                            formData.append('variables[file]', file);
+                            
+                            await fetch('https://api.monday.com/v2', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': API_KEY
+                                },
+                                body: formData
+                            });
+                        }
+                        
+                        successCount++;
+                        
+                    } catch (error) {
+                        console.error(`Error updating task ${taskId}:`, error);
+                        errorCount++;
+                    }
                 }
                 
-                showResult('✅ All tasks updated successfully!', 'success');
+                if (errorCount === 0) {
+                    showResult(`✅ All ${successCount} tasks updated successfully!`, 'success');
+                } else {
+                    showResult(`⚠️ ${successCount} tasks updated, ${errorCount} failed. Check console for details.`, 'error');
+                }
                 
             } catch (error) {
                 showResult('Error: ' + error.message, 'error');
