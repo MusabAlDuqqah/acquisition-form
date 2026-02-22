@@ -146,7 +146,7 @@
 
     <script>
         // CONFIGURATION
-        const API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYxMTQ4MzAxNiwiYWFpIjoxMSwidWlkIjo5ODE2NDg4MywiaWFkIjoiMjAyNi0wMS0yM1QxNDo0OTo1NC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MzMxNzQyNTYsInJnbiI6InVzZTEifQ.18JovTtUYM5Z7eg9IN8P0kzIYvW_fg2sWenkiV6Tzok';  // ⚠️ REPLACE WITH YOUR API KEY
+        const API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYxMTQ4MzAxNiwiYWFpIjoxMSwidWlkIjo5ODE2NDg4MywiaWFkIjoiMjAyNi0wMS0yM1QxNDo0OTo1NC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MzMxNzQyNTYsInJnbiI6InVzZTEifQ.18JovTtUYM5Z7eg9IN8P0kzIYvW_fg2sWenkiV6Tzok';
         const BOARD_ID = '18401100872';
         
         const COLUMNS = {
@@ -208,242 +208,211 @@
             }
         }
         
-       async function onPropertyChange(e) {
-    const propertyId = e.target.value;
-    const checklistSelect = document.getElementById('checklistSelect');
-    const tasksContainer = document.getElementById('tasksContainer');
-    
-    checklistSelect.innerHTML = '<option value="">Loading checklists...</option>';
-    checklistSelect.disabled = true;
-    tasksContainer.style.display = 'none';
-    
-    if (!propertyId) return;
-    
-    const query = `
-        query {
-            items(ids: [${propertyId}]) {
-                id
-                name
-                subitems {
-                    id
-                    name
-                }
-            }
-        }
-    `;
-    
-    try {
-        const response = await fetch('https://api.monday.com/v2', {
-            method: 'POST',
-            headers: {
-                'Authorization': API_KEY,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ query })
-        });
-        
-        const data = await response.json();
-        
-        if (data.errors) {
-            showResult('Error: ' + data.errors[0].message, 'error');
-            return;
-        }
-        
-        const allSubitems = data.data.items[0].subitems;
-        
-        // SMART FILTER: Look for items that are likely checklists
-        // Based on your board: "Transition To Ops", "DD (copy)", "Underwriting (copy)", etc.
-        const potentialChecklists = allSubitems.filter(item => 
-            item.name.includes('(copy)') || 
-            item.name === 'Transition To Ops' ||
-            item.name === 'DD' ||
-            item.name === 'Underwriting' ||
-            item.name === 'Close out' ||
-            item.name.match(/^[A-Z][a-z]+\s+(To|&)/) // Matches "Transition To" or "Title &"
-        );
-        
-        console.log('Filtered to potential checklists:', potentialChecklists.length);
-        console.log('Names:', potentialChecklists.map(c => c.name));
-        
-        // Now check only these for subitems
-        const checklists = [];
-        
-        for (const item of potentialChecklists) {
-            const checkQuery = `
+        async function onPropertyChange(e) {
+            const propertyId = e.target.value;
+            const checklistSelect = document.getElementById('checklistSelect');
+            const tasksContainer = document.getElementById('tasksContainer');
+            
+            checklistSelect.innerHTML = '<option value="">Loading checklists...</option>';
+            checklistSelect.disabled = true;
+            tasksContainer.style.display = 'none';
+            
+            if (!propertyId) return;
+            
+            // OPTIMIZED: Get ALL subitems at once with their subitem counts
+            const query = `
                 query {
-                    items(ids: [${item.id}]) {
-                        id
-                        name
-                        subitems {
-                            id
-                        }
-                    }
-                }
-            `;
-            
-            const checkResponse = await fetch('https://api.monday.com/v2', {
-                method: 'POST',
-                headers: {
-                    'Authorization': API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ query: checkQuery })
-            });
-            
-            const checkData = await checkResponse.json();
-            
-            if (checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0) {
-                checklists.push(item);
-            }
-        }
-        
-        console.log('FOUND CHECKLISTS:', checklists);
-        
-        checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
-        
-        if (checklists.length > 0) {
-            checklistSelect.disabled = false;
-            checklists.forEach(checklist => {
-                const option = document.createElement('option');
-                option.value = checklist.id;
-                option.textContent = checklist.name.replace(' (copy)', '');
-                checklistSelect.appendChild(option);
-            });
-        } else {
-            checklistSelect.innerHTML = '<option value="">No checklists found</option>';
-        }
-        
-    } catch (error) {
-        showResult('Error: ' + error.message, 'error');
-    }
-}
-        
-        async function onChecklistChange(e) {
-    const checklistId = e.target.value;
-    const tasksContainer = document.getElementById('tasksContainer');
-    const tasksList = document.getElementById('tasksList');
-    
-    if (!checklistId) {
-        tasksContainer.style.display = 'none';
-        return;
-    }
-    
-    tasksList.innerHTML = '<div class="loading">Loading tasks...</div>';
-    tasksContainer.style.display = 'block';
-    
-    // FIXED: First get the checklist's subitems (categories - Level 2)
-    const checklistQuery = `
-        query {
-            items(ids: [${checklistId}]) {
-                id
-                name
-                subitems {
-                    id
-                    name
-                }
-            }
-        }
-    `;
-    
-    try {
-        const checklistResponse = await fetch('https://api.monday.com/v2', {
-            method: 'POST',
-            headers: {
-                'Authorization': API_KEY,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ query: checklistQuery })
-        });
-        
-        const checklistData = await checklistResponse.json();
-        
-        if (checklistData.errors) {
-            showResult('Error: ' + checklistData.errors[0].message, 'error');
-            return;
-        }
-        
-        const categories = checklistData.data.items[0].subitems;
-        
-        if (!categories || categories.length === 0) {
-            tasksList.innerHTML = '<p>No categories found in this checklist.</p>';
-            return;
-        }
-        
-        // Now get tasks for each category (Level 3)
-        let html = '';
-        allTasks = [];
-        
-        for (const category of categories) {
-            const categoryQuery = `
-                query {
-                    items(ids: [${category.id}]) {
+                    items(ids: [${propertyId}]) {
                         id
                         name
                         subitems {
                             id
                             name
-                            column_values {
+                            subitems {
                                 id
-                                value
                             }
                         }
                     }
                 }
             `;
             
-            const categoryResponse = await fetch('https://api.monday.com/v2', {
-                method: 'POST',
-                headers: {
-                    'Authorization': API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ query: categoryQuery })
-            });
-            
-            const categoryData = await categoryResponse.json();
-            
-            if (categoryData.errors) continue;
-            
-            const tasks = categoryData.data.items[0].subitems;
-            
-            if (tasks && tasks.length > 0) {
-                html += `
-                    <div class="category-section">
-                        <div class="category-title">${category.name}</div>
-                `;
-                
-                tasks.forEach(task => {
-                    const checkboxColumn = task.column_values.find(cv => cv.id === COLUMNS.CHECKBOX);
-                    const isChecked = checkboxColumn && checkboxColumn.value ? JSON.parse(checkboxColumn.value).checked : false;
-                    
-                    allTasks.push({
-                        id: task.id,
-                        name: task.name,
-                        category: category.name,
-                        checked: isChecked
-                    });
-                    
-                    html += `
-                        <div class="task-item">
-                            <input type="checkbox" 
-                                   class="task-checkbox" 
-                                   data-task-id="${task.id}"
-                                   ${isChecked ? 'checked' : ''}>
-                            <span class="task-name">${task.name}</span>
-                        </div>
-                    `;
+            try {
+                const response = await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
                 });
                 
-                html += '</div>';
+                const data = await response.json();
+                
+                if (data.errors) {
+                    showResult('Error: ' + data.errors[0].message, 'error');
+                    return;
+                }
+                
+                const allSubitems = data.data.items[0].subitems;
+                
+                // Filter: Keep only items that have subitems (checklists)
+                const checklists = allSubitems.filter(item => 
+                    item.subitems && item.subitems.length > 0
+                );
+                
+                console.log('Found checklists:', checklists.length);
+                console.log('Names:', checklists.map(c => c.name));
+                
+                checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
+                
+                if (checklists.length > 0) {
+                    checklistSelect.disabled = false;
+                    checklists.forEach(checklist => {
+                        const option = document.createElement('option');
+                        option.value = checklist.id;
+                        option.textContent = checklist.name.replace(' (copy)', '');
+                        checklistSelect.appendChild(option);
+                    });
+                } else {
+                    checklistSelect.innerHTML = '<option value="">No checklists found</option>';
+                }
+                
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
             }
         }
         
-        tasksList.innerHTML = html || '<p>No tasks found in this checklist.</p>';
-        
-    } catch (error) {
-        showResult('Error: ' + error.message, 'error');
-    }
-}
+        async function onChecklistChange(e) {
+            const checklistId = e.target.value;
+            const tasksContainer = document.getElementById('tasksContainer');
+            const tasksList = document.getElementById('tasksList');
+            
+            if (!checklistId) {
+                tasksContainer.style.display = 'none';
+                return;
+            }
+            
+            tasksList.innerHTML = '<div class="loading">Loading tasks...</div>';
+            tasksContainer.style.display = 'block';
+            
+            // Load categories for this checklist
+            const checklistQuery = `
+                query {
+                    items(ids: [${checklistId}]) {
+                        id
+                        name
+                        subitems {
+                            id
+                            name
+                        }
+                    }
+                }
+            `;
+            
+            try {
+                const checklistResponse = await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: checklistQuery })
+                });
+                
+                const checklistData = await checklistResponse.json();
+                
+                if (checklistData.errors) {
+                    showResult('Error: ' + checklistData.errors[0].message, 'error');
+                    return;
+                }
+                
+                const categories = checklistData.data.items[0].subitems;
+                
+                if (!categories || categories.length === 0) {
+                    tasksList.innerHTML = '<p>No categories found in this checklist.</p>';
+                    return;
+                }
+                
+                // Get ALL category IDs to fetch in one query
+                const categoryIds = categories.map(c => c.id).join(',');
+                
+                // OPTIMIZED: Fetch ALL tasks at once
+                const tasksQuery = `
+                    query {
+                        items(ids: [${categoryIds}]) {
+                            id
+                            name
+                            subitems {
+                                id
+                                name
+                                column_values {
+                                    id
+                                    value
+                                }
+                            }
+                        }
+                    }
+                `;
+                
+                const tasksResponse = await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: tasksQuery })
+                });
+                
+                const tasksData = await tasksResponse.json();
+                
+                if (tasksData.errors) {
+                    showResult('Error: ' + tasksData.errors[0].message, 'error');
+                    return;
+                }
+                
+                const categoriesWithTasks = tasksData.data.items;
+                let html = '';
+                allTasks = [];
+                
+                categoriesWithTasks.forEach(category => {
+                    if (category.subitems && category.subitems.length > 0) {
+                        html += `
+                            <div class="category-section">
+                                <div class="category-title">${category.name.replace(' (copy)', '')}</div>
+                        `;
+                        
+                        category.subitems.forEach(task => {
+                            const checkboxColumn = task.column_values.find(cv => cv.id === COLUMNS.CHECKBOX);
+                            const isChecked = checkboxColumn && checkboxColumn.value ? JSON.parse(checkboxColumn.value).checked : false;
+                            
+                            allTasks.push({
+                                id: task.id,
+                                name: task.name,
+                                category: category.name,
+                                checked: isChecked
+                            });
+                            
+                            html += `
+                                <div class="task-item">
+                                    <input type="checkbox" 
+                                           class="task-checkbox" 
+                                           data-task-id="${task.id}"
+                                           ${isChecked ? 'checked' : ''}>
+                                    <span class="task-name">${task.name}</span>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                    }
+                });
+                
+                tasksList.innerHTML = html || '<p>No tasks found in this checklist.</p>';
+                
+            } catch (error) {
+                showResult('Error: ' + error.message, 'error');
+            }
+        }
         
         async function saveTasks() {
             const checkboxes = document.querySelectorAll('.task-checkbox');
