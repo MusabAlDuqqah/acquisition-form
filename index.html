@@ -27,13 +27,17 @@
             font-weight: bold;
             color: #555;
         }
-        select, textarea, input[type="file"] {
+        select, textarea, input[type="file"], input[type="checkbox"] {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
             box-sizing: border-box;
+        }
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
         }
         textarea {
             resize: vertical;
@@ -73,6 +77,11 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -85,17 +94,16 @@
                 <option value="">Loading tasks...</option>
             </select>
             
-            <label for="status">Status:</label>
-            <select id="status" required>
-                <option value="">Select status...</option>
-                <option value="Complete">Complete</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Blocked">Blocked</option>
-                <option value="Not Started">Not Started</option>
-            </select>
+            <div class="checkbox-container">
+                <input type="checkbox" id="completed">
+                <label for="completed" style="margin: 0;">Mark as Complete</label>
+            </div>
             
             <label for="notes">Notes:</label>
             <textarea id="notes" placeholder="Add any notes or comments..."></textarea>
+            
+            <label for="fileUpload">Upload File:</label>
+            <input type="file" id="fileUpload">
             
             <button type="submit" id="submitBtn">Update Task</button>
         </form>
@@ -108,12 +116,12 @@
         const API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYxMTQ4MzAxNiwiYWFpIjoxMSwidWlkIjo5ODE2NDg4MywiaWFkIjoiMjAyNi0wMS0yM1QxNDo0OTo1NC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MzMxNzQyNTYsInJnbiI6InVzZTEifQ.18JovTtUYM5Z7eg9IN8P0kzIYvW_fg2sWenkiV6Tzok';  // ⚠️ REPLACE WITH YOUR API KEY
         const BOARD_ID = '18401100872';
         
-        // Column IDs from your board
+        // Column IDs from your multi-level board
         const COLUMNS = {
-            STATUS: 'status',
-            NOTES: 'long_text_mkzt5vh2',
-            FILES: 'file_mkztggtv',
-            TARGET_DATE: 'date4'
+            CHECKBOX: 'boolean_mm0tgjha',
+            PEOPLE: 'multiple_person_mm0t72ab',
+            FILES: 'file_mm0t6adw',
+            NOTES: 'long_text_mm0thdhe'
         };
         
         // Load tasks when page loads
@@ -122,20 +130,49 @@
         // Handle form submission
         document.getElementById('taskForm').addEventListener('submit', updateTask);
         
+        // Recursive function to get all subitems at all levels
+        function getAllSubitems(items, level = 0) {
+            let allTasks = [];
+            const indent = '  '.repeat(level);
+            
+            items.forEach(item => {
+                allTasks.push({
+                    id: item.id,
+                    name: indent + (level > 0 ? '→ ' : '') + item.name,
+                    level: level
+                });
+                
+                if (item.subitems && item.subitems.length > 0) {
+                    const subTasks = getAllSubitems(item.subitems, level + 1);
+                    allTasks = allTasks.concat(subTasks);
+                }
+            });
+            
+            return allTasks;
+        }
+        
         async function loadTasks() {
             const query = `
                 query {
                     boards(ids: ${BOARD_ID}) {
-                        items_page(limit: 200) {
+                        items_page(limit: 500) {
                             items {
                                 id
                                 name
                                 subitems {
                                     id
                                     name
-                                    parent_item {
+                                    subitems {
                                         id
                                         name
+                                        subitems {
+                                            id
+                                            name
+                                            subitems {
+                                                id
+                                                name
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -164,24 +201,16 @@
                 const select = document.getElementById('taskId');
                 select.innerHTML = '<option value="">Select a task...</option>';
                 
-                // Add all items and subitems to dropdown
+                // Get all items including nested subitems
                 const items = data.data.boards[0].items_page.items;
-                items.forEach(item => {
-                    // Add parent items
+                const allTasks = getAllSubitems(items);
+                
+                // Add all tasks to dropdown
+                allTasks.forEach(task => {
                     const option = document.createElement('option');
-                    option.value = item.id;
-                    option.textContent = item.name;
+                    option.value = task.id;
+                    option.textContent = task.name;
                     select.appendChild(option);
-                    
-                    // Add subitems
-                    if (item.subitems && item.subitems.length > 0) {
-                        item.subitems.forEach(subitem => {
-                            const subOption = document.createElement('option');
-                            subOption.value = subitem.id;
-                            subOption.textContent = '  → ' + subitem.name;
-                            select.appendChild(subOption);
-                        });
-                    }
                 });
                 
             } catch (error) {
@@ -193,8 +222,9 @@
             e.preventDefault();
             
             const taskId = document.getElementById('taskId').value;
-            const status = document.getElementById('status').value;
+            const completed = document.getElementById('completed').checked;
             const notes = document.getElementById('notes').value;
+            const fileInput = document.getElementById('fileUpload');
             
             if (!taskId) {
                 showResult('Please select a task', 'error');
@@ -205,55 +235,84 @@
             submitBtn.disabled = true;
             submitBtn.textContent = 'Updating...';
             
-            // Build column updates
-            const updates = [];
-            
-            // Update status
-            if (status) {
-                updates.push({
-                    column_id: COLUMNS.STATUS,
-                    value: JSON.stringify({ label: status })
-                });
-            }
-            
-            // Update notes
-            if (notes) {
-                updates.push({
-                    column_id: COLUMNS.NOTES,
-                    value: JSON.stringify(notes)
-                });
-            }
-            
-            // Execute updates one by one
             try {
-                for (const update of updates) {
-                    const query = `
+                // Update checkbox (complete/incomplete)
+                if (completed !== null) {
+                    const checkboxQuery = `
                         mutation {
                             change_simple_column_value(
                                 item_id: ${taskId},
                                 board_id: ${BOARD_ID},
-                                column_id: "${update.column_id}",
-                                value: ${JSON.stringify(update.value)}
+                                column_id: "${COLUMNS.CHECKBOX}",
+                                value: ${JSON.stringify(JSON.stringify({ checked: completed }))}
                             ) {
                                 id
                             }
                         }
                     `;
                     
-                    const response = await fetch('https://api.monday.com/v2', {
+                    await fetch('https://api.monday.com/v2', {
                         method: 'POST',
                         headers: {
                             'Authorization': API_KEY,
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ query })
+                        body: JSON.stringify({ query: checkboxQuery })
                     });
+                }
+                
+                // Update notes
+                if (notes) {
+                    const notesQuery = `
+                        mutation {
+                            change_simple_column_value(
+                                item_id: ${taskId},
+                                board_id: ${BOARD_ID},
+                                column_id: "${COLUMNS.NOTES}",
+                                value: ${JSON.stringify(JSON.stringify(notes))}
+                            ) {
+                                id
+                            }
+                        }
+                    `;
                     
-                    const data = await response.json();
+                    await fetch('https://api.monday.com/v2', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': API_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ query: notesQuery })
+                    });
+                }
+                
+                // Upload file if selected
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    const formData = new FormData();
                     
-                    if (data.errors) {
-                        throw new Error(data.errors[0].message);
-                    }
+                    const fileQuery = `
+                        mutation($file: File!) {
+                            add_file_to_column(
+                                item_id: ${taskId},
+                                column_id: "${COLUMNS.FILES}",
+                                file: $file
+                            ) {
+                                id
+                            }
+                        }
+                    `;
+                    
+                    formData.append('query', fileQuery);
+                    formData.append('variables[file]', file);
+                    
+                    await fetch('https://api.monday.com/v2', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': API_KEY
+                        },
+                        body: formData
+                    });
                 }
                 
                 showResult('✅ Task updated successfully!', 'success');
