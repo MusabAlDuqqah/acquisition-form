@@ -116,64 +116,28 @@
         const API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYxMTQ4MzAxNiwiYWFpIjoxMSwidWlkIjo5ODE2NDg4MywiaWFkIjoiMjAyNi0wMS0yM1QxNDo0OTo1NC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MzMxNzQyNTYsInJnbiI6InVzZTEifQ.18JovTtUYM5Z7eg9IN8P0kzIYvW_fg2sWenkiV6Tzok';  // ⚠️ REPLACE WITH YOUR API KEY
         const BOARD_ID = '18401100872';
         
-        // Column IDs from your multi-level board
+        // Column IDs
         const COLUMNS = {
             CHECKBOX: 'boolean_mm0tgjha',
-            PEOPLE: 'multiple_person_mm0t72ab',
             FILES: 'file_mm0t6adw',
             NOTES: 'long_text_mm0thdhe'
         };
         
-        // Load tasks when page loads
         window.addEventListener('load', loadTasks);
-        
-        // Handle form submission
         document.getElementById('taskForm').addEventListener('submit', updateTask);
         
-        // Recursive function to get all subitems at all levels
-        function getAllSubitems(items, level = 0) {
-            let allTasks = [];
-            const indent = '  '.repeat(level);
-            
-            items.forEach(item => {
-                allTasks.push({
-                    id: item.id,
-                    name: indent + (level > 0 ? '→ ' : '') + item.name,
-                    level: level
-                });
-                
-                if (item.subitems && item.subitems.length > 0) {
-                    const subTasks = getAllSubitems(item.subitems, level + 1);
-                    allTasks = allTasks.concat(subTasks);
-                }
-            });
-            
-            return allTasks;
-        }
-        
         async function loadTasks() {
+            // SIMPLIFIED: Only load 2 levels at a time
             const query = `
                 query {
                     boards(ids: ${BOARD_ID}) {
-                        items_page(limit: 500) {
+                        items_page(limit: 200) {
                             items {
                                 id
                                 name
                                 subitems {
                                     id
                                     name
-                                    subitems {
-                                        id
-                                        name
-                                        subitems {
-                                            id
-                                            name
-                                            subitems {
-                                                id
-                                                name
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -194,23 +158,31 @@
                 const data = await response.json();
                 
                 if (data.errors) {
-                    showResult('Error loading tasks: ' + data.errors[0].message, 'error');
+                    showResult('Error: ' + data.errors[0].message, 'error');
                     return;
                 }
                 
                 const select = document.getElementById('taskId');
                 select.innerHTML = '<option value="">Select a task...</option>';
                 
-                // Get all items including nested subitems
                 const items = data.data.boards[0].items_page.items;
-                const allTasks = getAllSubitems(items);
                 
-                // Add all tasks to dropdown
-                allTasks.forEach(task => {
+                items.forEach(item => {
+                    // Add parent
                     const option = document.createElement('option');
-                    option.value = task.id;
-                    option.textContent = task.name;
+                    option.value = item.id;
+                    option.textContent = item.name;
                     select.appendChild(option);
+                    
+                    // Add subitems
+                    if (item.subitems) {
+                        item.subitems.forEach(sub => {
+                            const subOption = document.createElement('option');
+                            subOption.value = sub.id;
+                            subOption.textContent = '  → ' + sub.name;
+                            select.appendChild(subOption);
+                        });
+                    }
                 });
                 
             } catch (error) {
@@ -236,32 +208,30 @@
             submitBtn.textContent = 'Updating...';
             
             try {
-                // Update checkbox (complete/incomplete)
-                if (completed !== null) {
-                    const checkboxQuery = `
-                        mutation {
-                            change_simple_column_value(
-                                item_id: ${taskId},
-                                board_id: ${BOARD_ID},
-                                column_id: "${COLUMNS.CHECKBOX}",
-                                value: ${JSON.stringify(JSON.stringify({ checked: completed }))}
-                            ) {
-                                id
-                            }
+                // Update checkbox
+                const checkboxQuery = `
+                    mutation {
+                        change_simple_column_value(
+                            item_id: ${taskId},
+                            board_id: ${BOARD_ID},
+                            column_id: "${COLUMNS.CHECKBOX}",
+                            value: ${JSON.stringify(JSON.stringify({ checked: completed }))}
+                        ) {
+                            id
                         }
-                    `;
-                    
-                    await fetch('https://api.monday.com/v2', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': API_KEY,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ query: checkboxQuery })
-                    });
-                }
+                    }
+                `;
                 
-                // Update notes
+                await fetch('https://api.monday.com/v2', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: checkboxQuery })
+                });
+                
+                // Update notes if provided
                 if (notes) {
                     const notesQuery = `
                         mutation {
@@ -317,7 +287,6 @@
                 
                 showResult('✅ Task updated successfully!', 'success');
                 document.getElementById('taskForm').reset();
-                document.getElementById('taskId').value = '';
                 
             } catch (error) {
                 showResult('Error: ' + error.message, 'error');
