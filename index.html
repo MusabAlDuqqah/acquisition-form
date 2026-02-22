@@ -209,65 +209,100 @@
         }
         
         async function onPropertyChange(e) {
-            const propertyId = e.target.value;
-            const checklistSelect = document.getElementById('checklistSelect');
-            const tasksContainer = document.getElementById('tasksContainer');
-            
-            checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
-            checklistSelect.disabled = true;
-            tasksContainer.style.display = 'none';
-            
-            if (!propertyId) return;
-            
-            // Load checklists (subitems of property)
-            const query = `
+    const propertyId = e.target.value;
+    const checklistSelect = document.getElementById('checklistSelect');
+    const tasksContainer = document.getElementById('tasksContainer');
+    
+    checklistSelect.innerHTML = '<option value="">Loading checklists...</option>';
+    checklistSelect.disabled = true;
+    tasksContainer.style.display = 'none';
+    
+    if (!propertyId) return;
+    
+    // Load ALL subitems and check which ones have children (those are checklists)
+    const query = `
+        query {
+            items(ids: [${propertyId}]) {
+                id
+                name
+                subitems {
+                    id
+                    name
+                }
+            }
+        }
+    `;
+    
+    try {
+        const response = await fetch('https://api.monday.com/v2', {
+            method: 'POST',
+            headers: {
+                'Authorization': API_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query })
+        });
+        
+        const data = await response.json();
+        
+        if (data.errors) {
+            showResult('Error: ' + data.errors[0].message, 'error');
+            return;
+        }
+        
+        const allSubitems = data.data.items[0].subitems;
+        
+        // Now check each subitem to see if it has children (checklist) or not (task)
+        const checklists = [];
+        
+        for (const item of allSubitems) {
+            const checkQuery = `
                 query {
-                    items(ids: [${propertyId}]) {
+                    items(ids: [${item.id}]) {
                         id
                         name
                         subitems {
                             id
-                            name
                         }
                     }
                 }
             `;
             
-            try {
-                const response = await fetch('https://api.monday.com/v2', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': API_KEY,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ query })
-                });
-                
-                const data = await response.json();
-                
-                if (data.errors) {
-                    showResult('Error: ' + data.errors[0].message, 'error');
-                    return;
-                }
-                
-                const checklists = data.data.items[0].subitems;
-                
-                if (checklists && checklists.length > 0) {
-                    checklistSelect.disabled = false;
-                    checklists.forEach(checklist => {
-                        const option = document.createElement('option');
-                        option.value = checklist.id;
-                        option.textContent = checklist.name;
-                        checklistSelect.appendChild(option);
-                    });
-                } else {
-                    checklistSelect.innerHTML = '<option value="">No checklists available</option>';
-                }
-                
-            } catch (error) {
-                showResult('Error: ' + error.message, 'error');
+            const checkResponse = await fetch('https://api.monday.com/v2', {
+                method: 'POST',
+                headers: {
+                    'Authorization': API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query: checkQuery })
+            });
+            
+            const checkData = await checkResponse.json();
+            
+            // If it has subitems, it's a checklist!
+            if (checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0) {
+                checklists.push(item);
             }
         }
+        
+        checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
+        
+        if (checklists.length > 0) {
+            checklistSelect.disabled = false;
+            checklists.forEach(checklist => {
+                const option = document.createElement('option');
+                option.value = checklist.id;
+                option.textContent = checklist.name;
+                checklistSelect.appendChild(option);
+            });
+        } else {
+            checklistSelect.innerHTML = '<option value="">No checklists available</option>';
+        }
+        
+    } catch (error) {
+        showResult('Error: ' + error.message, 'error');
+    }
+}
         
         async function onChecklistChange(e) {
     const checklistId = e.target.value;
