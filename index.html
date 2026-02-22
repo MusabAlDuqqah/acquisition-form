@@ -208,7 +208,7 @@
             }
         }
         
-        async function onPropertyChange(e) {
+       async function onPropertyChange(e) {
     const propertyId = e.target.value;
     const checklistSelect = document.getElementById('checklistSelect');
     const tasksContainer = document.getElementById('tasksContainer');
@@ -219,7 +219,9 @@
     
     if (!propertyId) return;
     
-    // Load ALL subitems and check which ones have children (those are checklists)
+    console.log('=== LOADING CHECKLISTS FOR PROPERTY:', propertyId, '===');
+    
+    // Load ALL subitems
     const query = `
         query {
             items(ids: [${propertyId}]) {
@@ -244,6 +246,7 @@
         });
         
         const data = await response.json();
+        console.log('RAW DATA:', data);
         
         if (data.errors) {
             showResult('Error: ' + data.errors[0].message, 'error');
@@ -251,11 +254,16 @@
         }
         
         const allSubitems = data.data.items[0].subitems;
+        console.log('TOTAL SUBITEMS:', allSubitems.length);
+        console.log('FIRST 5 SUBITEMS:', allSubitems.slice(0, 5));
         
-        // Now check each subitem to see if it has children (checklist) or not (task)
+        // Check each one
         const checklists = [];
         
-        for (const item of allSubitems) {
+        for (let i = 0; i < allSubitems.length; i++) {
+            const item = allSubitems[i];
+            console.log(`Checking item ${i + 1}/${allSubitems.length}: ${item.name} (ID: ${item.id})`);
+            
             const checkQuery = `
                 query {
                     items(ids: [${item.id}]) {
@@ -263,6 +271,7 @@
                         name
                         subitems {
                             id
+                            name
                         }
                     }
                 }
@@ -278,12 +287,17 @@
             });
             
             const checkData = await checkResponse.json();
+            const hasSubitems = checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0;
             
-            // If it has subitems, it's a checklist!
-            if (checkData.data.items[0].subitems && checkData.data.items[0].subitems.length > 0) {
+            console.log(`  -> Has ${checkData.data.items[0].subitems?.length || 0} subitems`);
+            
+            if (hasSubitems) {
+                console.log(`  -> ✅ THIS IS A CHECKLIST!`);
                 checklists.push(item);
             }
         }
+        
+        console.log('FOUND CHECKLISTS:', checklists);
         
         checklistSelect.innerHTML = '<option value="">Select a checklist...</option>';
         
@@ -296,10 +310,11 @@
                 checklistSelect.appendChild(option);
             });
         } else {
-            checklistSelect.innerHTML = '<option value="">No checklists available</option>';
+            checklistSelect.innerHTML = '<option value="">No checklists found (check console)</option>';
         }
         
     } catch (error) {
+        console.error('ERROR:', error);
         showResult('Error: ' + error.message, 'error');
     }
 }
