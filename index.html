@@ -294,6 +294,29 @@
             COMMENTS: 'long_text_mm0thdhe'
         };
         
+        // Status label mappings (text to index)
+        const STATUS_LABELS = {
+            'In Progress': 0,
+            'Completed': 1,
+            'Not Started': 2,
+            'Blocked': 3
+        };
+        
+        // Reverse mapping (index to text) for display
+        const STATUS_INDEX_TO_TEXT = {
+            0: 'In Progress',
+            1: 'Completed',
+            2: 'Not Started',
+            3: 'Blocked'
+        };
+        
+        // Received Docs label mappings (we'll update this after checking)
+        const RECEIVED_DOCS_LABELS = {
+            'Yes': 0,
+            'No': 1,
+            'N/A': 2
+        };
+        
         const CHECKLIST_FIELDS = {
             'Transition To Ops': ['STATUS', 'DUE_DATE', 'RESPONSIBILITY', 'FILES', 'COMMENTS'],
             'DD (copy)': ['STATUS', 'RESPONSIBILITY', 'RECEIVED_DOCS', 'COMPLETION_DATE', 'COMMENTS', 'FILES'],
@@ -535,15 +558,8 @@
                     console.log('Task:', task.name);
                     console.log('Columns:', task.column_values);
                     
+                    // Extract all column values
                     const statusCol = task.column_values.find(cv => cv.id === COLUMNS.STATUS);
-                    const statusValue = statusCol && statusCol.value ? JSON.parse(statusCol.value) : null;
-                    const status = statusValue ? statusValue.label || '' : '';
-                    const isComplete = status.toLowerCase().includes('complete');
-                    
-                    console.log('Status value:', statusValue, 'Status:', status);
-                    
-                    if (isComplete) completedTasks++;
-                    
                     const responsibilityCol = task.column_values.find(cv => cv.id === COLUMNS.RESPONSIBILITY);
                     const receivedDocsCol = task.column_values.find(cv => cv.id === COLUMNS.RECEIVED_DOCS);
                     const dueDateCol = task.column_values.find(cv => cv.id === COLUMNS.DUE_DATE);
@@ -551,6 +567,15 @@
                     const daysRemainingCol = task.column_values.find(cv => cv.id === COLUMNS.DAYS_REMAINING);
                     const filesCol = task.column_values.find(cv => cv.id === COLUMNS.FILES);
                     const commentsCol = task.column_values.find(cv => cv.id === COLUMNS.COMMENTS);
+                    
+                    const statusValue = statusCol && statusCol.value ? JSON.parse(statusCol.value) : null;
+                    const statusIndex = statusValue ? statusValue.index : null;
+                    const status = statusIndex !== null && statusIndex !== undefined ? STATUS_INDEX_TO_TEXT[statusIndex] || '' : '';
+                    const isComplete = status.toLowerCase().includes('complete');
+                    
+                    console.log('Status value:', statusValue, 'Status index:', statusIndex, 'Status text:', status);
+                    
+                    if (isComplete) completedTasks++;
                     
                     const badgeClass = isComplete ? 'badge-complete' : (status.toLowerCase().includes('progress') ? 'badge-progress' : 'badge-not-started');
                     const badgeText = isComplete ? '✓ Complete' : (status ? status : 'Not Started');
@@ -583,15 +608,24 @@
                     }
                     
                     if (fields.includes('RECEIVED_DOCS')) {
-                        const receivedValue = receivedDocsCol && receivedDocsCol.value ? JSON.parse(receivedDocsCol.value).label || '' : '';
+                        const receivedDocsCol = task.column_values.find(cv => cv.id === COLUMNS.RECEIVED_DOCS);
+                        const receivedValue = receivedDocsCol && receivedDocsCol.value ? JSON.parse(receivedDocsCol.value) : null;
+                        const receivedIndex = receivedValue ? receivedValue.index : null;
+                        
+                        // Map index back to text for dropdown
+                        let receivedText = '';
+                        if (receivedIndex === 0) receivedText = 'Yes';
+                        else if (receivedIndex === 1) receivedText = 'No';
+                        else if (receivedIndex === 2) receivedText = 'N/A';
+                        
                         html += `
                             <div class="field-group">
                                 <label>Received Docs</label>
                                 <select data-field="received-docs">
                                     <option value="">-- Select --</option>
-                                    <option value="Yes" ${receivedValue === 'Yes' ? 'selected' : ''}>Yes</option>
-                                    <option value="No" ${receivedValue === 'No' ? 'selected' : ''}>No</option>
-                                    <option value="N/A" ${receivedValue === 'N/A' ? 'selected' : ''}>N/A</option>
+                                    <option value="Yes" ${receivedText === 'Yes' ? 'selected' : ''}>Yes</option>
+                                    <option value="No" ${receivedText === 'No' ? 'selected' : ''}>No</option>
+                                    <option value="N/A" ${receivedText === 'N/A' ? 'selected' : ''}>N/A</option>
                                 </select>
                             </div>
                         `;
@@ -710,29 +744,46 @@
             // Get status
             const statusField = taskCard.querySelector('[data-field="status"]');
             if (statusField && statusField.value) {
-                const statusValue = { label: statusField.value };
-                console.log('📊 Status field value:', statusField.value);
-                console.log('📊 Status JSON:', statusValue);
-                console.log('📊 Status stringified:', JSON.stringify(statusValue));
-                mutations.push({
-                    column: COLUMNS.STATUS,
-                    columnName: 'STATUS',
-                    value: statusValue,
-                    rawValue: statusField.value
-                });
+                const statusText = statusField.value;
+                const statusIndex = STATUS_LABELS[statusText];
+                
+                if (statusIndex === undefined) {
+                    console.error('⚠️ Unknown status text:', statusText);
+                } else {
+                    const statusValue = { label: statusIndex };
+                    console.log('📊 Status field value:', statusText);
+                    console.log('📊 Status index:', statusIndex);
+                    console.log('📊 Status JSON:', statusValue);
+                    console.log('📊 Status stringified:', JSON.stringify(statusValue));
+                    mutations.push({
+                        column: COLUMNS.STATUS,
+                        columnName: 'STATUS',
+                        value: statusValue,
+                        rawValue: statusText
+                    });
+                }
             }
             
             // Get received docs
             const receivedDocsField = taskCard.querySelector('[data-field="received-docs"]');
             if (receivedDocsField && receivedDocsField.value) {
-                const docsValue = { label: receivedDocsField.value };
-                console.log('📄 Received Docs value:', docsValue);
-                mutations.push({
-                    column: COLUMNS.RECEIVED_DOCS,
-                    columnName: 'RECEIVED_DOCS',
-                    value: docsValue,
-                    rawValue: receivedDocsField.value
-                });
+                const docsText = receivedDocsField.value;
+                const docsIndex = RECEIVED_DOCS_LABELS[docsText];
+                
+                if (docsIndex === undefined) {
+                    console.error('⚠️ Unknown received docs text:', docsText);
+                } else {
+                    const docsValue = { label: docsIndex };
+                    console.log('📄 Received Docs value:', docsText);
+                    console.log('📄 Received Docs index:', docsIndex);
+                    console.log('📄 Received Docs JSON:', docsValue);
+                    mutations.push({
+                        column: COLUMNS.RECEIVED_DOCS,
+                        columnName: 'RECEIVED_DOCS',
+                        value: docsValue,
+                        rawValue: docsText
+                    });
+                }
             }
             
             // Get due date
@@ -882,10 +933,14 @@
             const taskId = firstTaskCard.dataset.taskId;
             console.log('🎯 Testing with first task ID:', taskId);
             
-            const testValue = { label: 'In Progress' };
+            const testStatusText = 'In Progress';
+            const testStatusIndex = STATUS_LABELS[testStatusText];
+            const testValue = { label: testStatusIndex };
             const stringifiedOnce = JSON.stringify(testValue);
             const stringifiedTwice = JSON.stringify(stringifiedOnce);
             
+            console.log('📝 Test status text:', testStatusText);
+            console.log('📝 Test status index:', testStatusIndex);
             console.log('📝 Test value:', testValue);
             console.log('📝 Stringified once:', stringifiedOnce);
             console.log('📝 Stringified twice:', stringifiedTwice);
@@ -925,7 +980,7 @@
                     console.log('✅ Test PASSED!');
                     console.log('📊 Updated column value:', result.data.change_simple_column_value.column_values);
                     showSavingIndicator('saved', '✅ Test passed!');
-                    alert('Test PASSED! ✅\n\nStatus successfully set to "In Progress" on task: ' + result.data.change_simple_column_value.name + '\n\nCheck Monday.com to verify!');
+                    alert('Test PASSED! ✅\n\nStatus successfully set to "' + testStatusText + '" (index: ' + testStatusIndex + ') on task: ' + result.data.change_simple_column_value.name + '\n\nCheck Monday.com to verify!');
                     
                     // Refresh to show the change
                     setTimeout(() => onChecklistChange(), 2000);
