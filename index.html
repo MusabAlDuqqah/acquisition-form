@@ -257,6 +257,16 @@
         
         <div id="progressSection" style="display: none;">
             <div class="form-container progress-section">
+                  <!-- Search Bar -->
+                <div style="margin: 15px 0;">
+                    <input 
+                        type="text" 
+                        id="searchBar" 
+                        placeholder="🔍 Search tasks..." 
+                        onkeyup="filterTasks()"
+                        style="width: 100%; padding: 10px; border: 1px solid #c5c7d0; border-radius: 4px; font-size: 14px;"
+                    >
+                </div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                     <h3 style="margin: 0;">Overall Progress</h3>
                     <div>
@@ -269,16 +279,7 @@
                     </div>
                 </div>
                 
-                <!-- Search Bar -->
-                <div style="margin: 15px 0;">
-                    <input 
-                        type="text" 
-                        id="searchBar" 
-                        placeholder="🔍 Search tasks..." 
-                        onkeyup="filterTasks()"
-                        style="width: 100%; padding: 10px; border: 1px solid #c5c7d0; border-radius: 4px; font-size: 14px;"
-                    >
-                </div>
+              
                 
                 <div class="progress-bar">
                     <div id="progressFill" class="progress-fill">0%</div>
