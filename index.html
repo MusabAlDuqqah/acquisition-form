@@ -343,7 +343,7 @@
             console.log('API Query:', query);
             console.log('Variables:', variables);
             
-            const response = await fetch('https://api.monday.com/v2/file', {
+            const response = await fetch('https://api.monday.com/v2', {
                 method: 'POST',
                 headers: {
                     'Authorization': API_KEY,
@@ -1086,7 +1086,7 @@
         formData.append('query', query);
         formData.append('variables[file]', file, file.name);
 
-        const response = await fetch('https://api.monday.com/v2/file', {
+        const response = await fetch('https://api.monday.com/v2', {
             method: 'POST',
             headers: {
                 'Authorization': API_KEY
