@@ -237,7 +237,6 @@
             <div class="auto-save-notice">
                 <strong>💡 How to Save:</strong> Make your changes and click the "💾 Save Task" button on each task to save to Monday.com<br>
                 <small style="color: #666; margin-top: 5px; display: block;">
-                    💻 Debugging: Open browser console (F12) to see detailed save/load logs
                 </small>
             </div>
             
@@ -269,6 +268,18 @@
                         </button>
                     </div>
                 </div>
+                
+                <!-- Search Bar -->
+                <div style="margin: 15px 0;">
+                    <input 
+                        type="text" 
+                        id="searchBar" 
+                        placeholder="🔍 Search tasks..." 
+                        onkeyup="filterTasks()"
+                        style="width: 100%; padding: 10px; border: 1px solid #c5c7d0; border-radius: 4px; font-size: 14px;"
+                    >
+                </div>
+                
                 <div class="progress-bar">
                     <div id="progressFill" class="progress-fill">0%</div>
                 </div>
@@ -928,13 +939,16 @@
                     console.log('✅ Successfully saved', mutation.columnName);
                 }
 
-                // Handle file upload if present
+                // File upload disabled (CORS issue from GitHub Pages)
+                // TODO: Enable when backend server is set up
+                /*
                 const fileField = taskCard.querySelector('[data-field="file"]');
                 if (fileField && fileField.files && fileField.files.length > 0) {
                     console.log('📎 Uploading file...');
                     await uploadFileSync(taskId, fileField);
                     console.log('✅ File uploaded successfully');
                 }
+                */
                 
                 showSavingIndicator('saved', '✅ Task saved!');
                 console.log('🎉 ALL SAVES COMPLETED SUCCESSFULLY!');
@@ -1060,6 +1074,47 @@
             document.getElementById('progressFill').style.width = percentage + '%';
             document.getElementById('progressFill').textContent = percentage + '%';
             document.getElementById('progressText').textContent = `${completed} of ${total} tasks completed`;
+        }
+        
+        function filterTasks() {
+            const searchValue = document.getElementById('searchBar').value.toLowerCase();
+            const taskCards = document.querySelectorAll('.task-card');
+            const categories = document.querySelectorAll('.category-section');
+            
+            let visibleCount = 0;
+            
+            taskCards.forEach(card => {
+                const taskName = card.querySelector('.task-name').textContent.toLowerCase();
+                const status = card.querySelector('.completion-badge').textContent.toLowerCase();
+                
+                // Search in task name and status
+                const matches = taskName.includes(searchValue) || status.includes(searchValue);
+                
+                if (matches) {
+                    card.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+            
+            // Hide empty categories
+            categories.forEach(category => {
+                const visibleTasks = category.querySelectorAll('.task-card[style="display: block;"], .task-card:not([style*="display"])');
+                if (searchValue && visibleTasks.length === 0) {
+                    category.style.display = 'none';
+                } else {
+                    category.style.display = 'block';
+                }
+            });
+            
+            // Update progress text to show filtered count
+            if (searchValue) {
+                const allCards = document.querySelectorAll('.task-card');
+                document.getElementById('progressText').textContent = `Showing ${visibleCount} of ${allCards.length} tasks`;
+            } else {
+                updateProgress(); // Reset to normal progress
+            }
         }
         
         async function uploadFileSync(taskId, fileInput) {
