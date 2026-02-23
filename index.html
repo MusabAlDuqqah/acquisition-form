@@ -232,7 +232,12 @@
         
         <div id="progressSection" style="display: none;">
             <div class="form-container progress-section">
-                <h3>Overall Progress</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 style="margin: 0;">Overall Progress</h3>
+                    <button onclick="onChecklistChange()" style="padding: 8px 16px; background: #0073ea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        🔄 Refresh Tasks
+                    </button>
+                </div>
                 <div class="progress-bar">
                     <div id="progressFill" class="progress-fill">0%</div>
                 </div>
@@ -267,6 +272,16 @@
         
         let currentChecklistType = '';
         let teamMembers = [];
+        let commentTimers = {};
+        
+        // Debounce helper
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func(...args), wait);
+            };
+        }
         
         function showSavingIndicator(status, message) {
             const indicator = document.getElementById('savingIndicator');
@@ -495,7 +510,7 @@
                     const badgeText = isComplete ? '✓ Complete' : (status ? status : 'Not Started');
                     
                     html += `
-                        <div class="task-card ${isComplete ? 'completed' : ''}">
+                        <div class="task-card ${isComplete ? 'completed' : ''}" data-task-id="${task.id}">
                             <div class="task-header">
                                 <div class="task-name">${task.name}</div>
                                 <div class="completion-badge ${badgeClass}">${badgeText}</div>
@@ -592,7 +607,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Comments</label>
-                                <textarea rows="3" onchange="updateComments('${task.id}', this.value)">${comments}</textarea>
+                                <textarea rows="3" oninput="debouncedUpdateComments('${task.id}', this.value)">${comments}</textarea>
                             </div>
                         `;
                     }
@@ -656,12 +671,49 @@
                 await mondayAPI(query);
                 showSavingIndicator('saved', '✅ Saved!');
                 
-                await onChecklistChange();
+                // Update UI locally instead of reloading
+                updateTaskBadge(taskId, status);
+                updateProgress();
                 
             } catch (error) {
                 showSavingIndicator('error', '❌ Save failed');
                 console.error(error);
             }
+        }
+        
+        function updateTaskBadge(taskId, status) {
+            const taskCard = document.querySelector(`[data-task-id="${taskId}"]`);
+            if (!taskCard) return;
+            
+            const isComplete = status.toLowerCase().includes('complete');
+            const badge = taskCard.querySelector('.completion-badge');
+            
+            if (isComplete) {
+                taskCard.classList.add('completed');
+                badge.className = 'completion-badge badge-complete';
+                badge.textContent = '✓ Complete';
+            } else if (status.toLowerCase().includes('progress')) {
+                taskCard.classList.remove('completed');
+                badge.className = 'completion-badge badge-progress';
+                badge.textContent = status;
+            } else {
+                taskCard.classList.remove('completed');
+                badge.className = 'completion-badge badge-not-started';
+                badge.textContent = status || 'Not Started';
+            }
+        }
+        
+        function updateProgress() {
+            const allCards = document.querySelectorAll('.task-card');
+            const completedCards = document.querySelectorAll('.task-card.completed');
+            
+            const total = allCards.length;
+            const completed = completedCards.length;
+            const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+            
+            document.getElementById('progressFill').style.width = percentage + '%';
+            document.getElementById('progressFill').textContent = percentage + '%';
+            document.getElementById('progressText').textContent = `${completed} of ${total} tasks completed`;
         }
         
         async function updateReceivedDocs(taskId, value) {
@@ -779,6 +831,17 @@
             }
         }
         
+        // Debounced version - waits 1.5 seconds after typing stops
+        const debouncedUpdateComments = (taskId, comments) => {
+            if (commentTimers[taskId]) {
+                clearTimeout(commentTimers[taskId]);
+            }
+            
+            commentTimers[taskId] = setTimeout(() => {
+                updateComments(taskId, comments);
+            }, 1500);
+        };
+        
         async function uploadFile(taskId, fileInput) {
             if (!fileInput.files || fileInput.files.length === 0) return;
             
@@ -818,7 +881,7 @@
                 } else {
                     showSavingIndicator('saved', '✅ File uploaded!');
                     fileInput.value = '';
-                    await onChecklistChange();
+                    // Just show success, don't reload (user can refresh to see new file)
                 }
                 
             } catch (error) {
