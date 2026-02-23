@@ -600,7 +600,7 @@
                                     <option value="">-- Select --</option>
                                     <option value="Not Started" ${status === 'Not Started' ? 'selected' : ''}>Not Started</option>
                                     <option value="In Progress" ${status === 'In Progress' ? 'selected' : ''}>In Progress</option>
-                                    <option value="Complete" ${status === 'Complete' ? 'selected' : ''}>Complete</option>
+                                   <option value="Completed" ${status === 'Completed' ? 'selected' : ''}>Completed</option>
                                     <option value="Blocked" ${status === 'Blocked' ? 'selected' : ''}>Blocked</option>
                                 </select>
                             </div>
@@ -734,267 +734,297 @@
         }
         
         async function saveTask(taskId) {
-            const taskCard = document.querySelector(`[data-task-id="${taskId}"]`);
-            if (!taskCard) return;
-            
-            showSavingIndicator('saving', '💾 Saving task...');
-            
-            const mutations = [];
-            
-            // Get status
-            const statusField = taskCard.querySelector('[data-field="status"]');
-            if (statusField && statusField.value) {
-                const statusText = statusField.value;
-                const statusIndex = STATUS_LABELS[statusText];
-                
-                if (statusIndex === undefined) {
-                    console.error('⚠️ Unknown status text:', statusText);
-                } else {
-                    const statusValue = { label: statusIndex };
-                    console.log('📊 Status field value:', statusText);
-                    console.log('📊 Status index:', statusIndex);
-                    console.log('📊 Status JSON:', statusValue);
-                    console.log('📊 Status stringified:', JSON.stringify(statusValue));
-                    mutations.push({
-                        column: COLUMNS.STATUS,
-                        columnName: 'STATUS',
-                        value: statusValue,
-                        rawValue: statusText
-                    });
-                }
-            }
-            
-            // Get received docs
-            const receivedDocsField = taskCard.querySelector('[data-field="received-docs"]');
-            if (receivedDocsField && receivedDocsField.value) {
-                const docsText = receivedDocsField.value;
-                const docsIndex = RECEIVED_DOCS_LABELS[docsText];
-                
-                if (docsIndex === undefined) {
-                    console.error('⚠️ Unknown received docs text:', docsText);
-                } else {
-                    const docsValue = { label: docsIndex };
-                    console.log('📄 Received Docs value:', docsText);
-                    console.log('📄 Received Docs index:', docsIndex);
-                    console.log('📄 Received Docs JSON:', docsValue);
-                    mutations.push({
-                        column: COLUMNS.RECEIVED_DOCS,
-                        columnName: 'RECEIVED_DOCS',
-                        value: docsValue,
-                        rawValue: docsText
-                    });
-                }
-            }
-            
-            // Get due date
-            const dueDateField = taskCard.querySelector('[data-field="due-date"]');
-            if (dueDateField && dueDateField.value) {
-                const dateValue = { date: dueDateField.value };
-                console.log('📅 Due Date value:', dateValue);
-                mutations.push({
-                    column: COLUMNS.DUE_DATE,
-                    columnName: 'DUE_DATE',
-                    value: dateValue,
-                    rawValue: dueDateField.value
-                });
-            }
-            
-            // Get completion date
-            const completionDateField = taskCard.querySelector('[data-field="completion-date"]');
-            if (completionDateField && completionDateField.value) {
-                const compDateValue = { date: completionDateField.value };
-                console.log('📅 Completion Date value:', compDateValue);
-                mutations.push({
-                    column: COLUMNS.COMPLETION_DATE,
-                    columnName: 'COMPLETION_DATE',
-                    value: compDateValue,
-                    rawValue: completionDateField.value
-                });
-            }
-            
-            // Get responsibility
-            const responsibilityField = taskCard.querySelector('[data-field="responsibility"]');
-            if (responsibilityField) {
-                const selectedOptions = Array.from(responsibilityField.selectedOptions);
-                const personIds = selectedOptions.map(opt => parseInt(opt.value));
-                if (personIds.length > 0) {
-                    const peopleValue = {
-                        personsAndTeams: personIds.map(id => ({ id, kind: "person" }))
-                    };
-                    console.log('👥 People value:', peopleValue);
-                    mutations.push({
-                        column: COLUMNS.RESPONSIBILITY,
-                        columnName: 'RESPONSIBILITY',
-                        value: peopleValue,
-                        rawValue: personIds
-                    });
-                }
-            }
-            
-            // Get comments
-            const commentsField = taskCard.querySelector('[data-field="comments"]');
-            if (commentsField && commentsField.value.trim()) {
-                const commentsValue = commentsField.value.trim();
-                console.log('💬 Comments value:', commentsValue);
-                mutations.push({
-                    column: COLUMNS.COMMENTS,
-                    columnName: 'COMMENTS',
-                    value: commentsValue,
-                    rawValue: commentsValue
-                });
-            }
-            
-            console.log('🚀 STARTING SAVE for Task ID:', taskId);
-            console.log('📦 Total mutations to save:', mutations.length);
-            console.log('📋 Mutations:', mutations);
-            
-            // Save all fields
-            try {
-                for (let i = 0; i < mutations.length; i++) {
-                    const mutation = mutations[i];
-                    console.log(`\n--- Mutation ${i+1}/${mutations.length} ---`);
-                    console.log('Column:', mutation.columnName, '(' + mutation.column + ')');
-                    console.log('Raw value:', mutation.rawValue);
-                    console.log('Formatted value:', mutation.value);
-                    
-                    // Convert value to JSON string
-                    const jsonString = JSON.stringify(mutation.value);
-                    console.log('JSON string:', jsonString);
-                    
-                    // Escape for GraphQL (replace " with \")
-                    const escapedForGraphQL = jsonString.replace(/"/g, '\\"');
-                    console.log('Escaped for GraphQL:', escapedForGraphQL);
-                    console.log('In GraphQL will be: "' + escapedForGraphQL + '"');
-                    
-                    const query = `
-                        mutation {
-                            change_simple_column_value(
-                                item_id: ${taskId},
-                                board_id: ${BOARD_ID},
-                                column_id: "${mutation.column}",
-                                value: "${escapedForGraphQL}"
-                            ) {
+    const taskCard = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (!taskCard) return;
+
+    showSavingIndicator('saving', '💾 Saving task...');
+
+    const mutations = [];
+
+    // Helper: simple text-like columns (status/color/long_text simple values)
+    const SIMPLE_COLUMNS = new Set([
+        COLUMNS.STATUS,
+        COLUMNS.RECEIVED_DOCS,
+        COLUMNS.COMMENTS
+    ]);
+
+    // Get status (STATUS/COLOR column -> send plain label text, not JSON)
+    const statusField = taskCard.querySelector('[data-field="status"]');
+    if (statusField && statusField.value) {
+        const statusText = statusField.value;
+
+        if (STATUS_LABELS[statusText] === undefined) {
+            console.error('⚠️ Unknown status text:', statusText);
+        } else {
+            console.log('📊 Status field value:', statusText);
+            mutations.push({
+                column: COLUMNS.STATUS,
+                columnName: 'STATUS',
+                value: statusText,        // ✅ plain label text
+                rawValue: statusText,
+                mode: 'simple'
+            });
+        }
+    }
+
+    // Get received docs (also a color/status-like column -> send plain label text)
+    const receivedDocsField = taskCard.querySelector('[data-field="received-docs"]');
+    if (receivedDocsField && receivedDocsField.value) {
+        const docsText = receivedDocsField.value;
+
+        if (RECEIVED_DOCS_LABELS[docsText] === undefined) {
+            console.error('⚠️ Unknown received docs text:', docsText);
+        } else {
+            console.log('📄 Received Docs value:', docsText);
+            mutations.push({
+                column: COLUMNS.RECEIVED_DOCS,
+                columnName: 'RECEIVED_DOCS',
+                value: docsText,          // ✅ plain label text
+                rawValue: docsText,
+                mode: 'simple'
+            });
+        }
+    }
+
+    // Get due date (JSON column)
+    const dueDateField = taskCard.querySelector('[data-field="due-date"]');
+    if (dueDateField && dueDateField.value) {
+        const dateValue = { date: dueDateField.value };
+        console.log('📅 Due Date value:', dateValue);
+        mutations.push({
+            column: COLUMNS.DUE_DATE,
+            columnName: 'DUE_DATE',
+            value: dateValue,
+            rawValue: dueDateField.value,
+            mode: 'json'
+        });
+    }
+
+    // Get completion date (JSON column)
+    const completionDateField = taskCard.querySelector('[data-field="completion-date"]');
+    if (completionDateField && completionDateField.value) {
+        const compDateValue = { date: completionDateField.value };
+        console.log('📅 Completion Date value:', compDateValue);
+        mutations.push({
+            column: COLUMNS.COMPLETION_DATE,
+            columnName: 'COMPLETION_DATE',
+            value: compDateValue,
+            rawValue: completionDateField.value,
+            mode: 'json'
+        });
+    }
+
+    // Get responsibility (People column -> JSON)
+    const responsibilityField = taskCard.querySelector('[data-field="responsibility"]');
+    if (responsibilityField) {
+        const selectedOptions = Array.from(responsibilityField.selectedOptions);
+        const personIds = selectedOptions.map(opt => parseInt(opt.value, 10)).filter(Number.isFinite);
+
+        if (personIds.length > 0) {
+            const peopleValue = {
+                personsAndTeams: personIds.map(id => ({ id, kind: "person" }))
+            };
+            console.log('👥 People value:', peopleValue);
+            mutations.push({
+                column: COLUMNS.RESPONSIBILITY,
+                columnName: 'RESPONSIBILITY',
+                value: peopleValue,
+                rawValue: personIds,
+                mode: 'json'
+            });
+        }
+    }
+
+    // Get comments (long_text -> use simple string here)
+    const commentsField = taskCard.querySelector('[data-field="comments"]');
+    if (commentsField && commentsField.value.trim()) {
+        const commentsValue = commentsField.value.trim();
+        console.log('💬 Comments value:', commentsValue);
+        mutations.push({
+            column: COLUMNS.COMMENTS,
+            columnName: 'COMMENTS',
+            value: commentsValue,       // ✅ plain string
+            rawValue: commentsValue,
+            mode: 'simple'
+        });
+    }
+
+    console.log('🚀 STARTING SAVE for Task ID:', taskId);
+    console.log('📦 Total mutations to save:', mutations.length);
+    console.log('📋 Mutations:', mutations);
+
+    try {
+        for (let i = 0; i < mutations.length; i++) {
+            const mutation = mutations[i];
+
+            console.log(`\n--- Mutation ${i + 1}/${mutations.length} ---`);
+            console.log('Column:', mutation.columnName, '(' + mutation.column + ')');
+            console.log('Raw value:', mutation.rawValue);
+            console.log('Formatted value:', mutation.value);
+            console.log('Mode:', mutation.mode);
+
+            let query;
+            let variables;
+
+            if (mutation.mode === 'simple') {
+                query = `
+                    mutation ($itemId: ID!, $boardId: ID!, $columnId: String!, $value: String!) {
+                        change_simple_column_value(
+                            item_id: $itemId,
+                            board_id: $boardId,
+                            column_id: $columnId,
+                            value: $value
+                        ) {
+                            id
+                            name
+                            column_values(ids: [$columnId]) {
                                 id
-                                name
-                                column_values {
-                                    id
-                                    value
-                                    text
-                                }
+                                value
+                                text
                             }
                         }
-                    `;
-                    
-                    console.log('GraphQL Query:', query);
-                    
-                    const result = await mondayAPI(query);
-                    
-                    console.log('✅ Save result for', mutation.columnName, ':', result);
-                    
-                    if (result.errors) {
-                        console.error('❌ ERROR for', mutation.columnName, ':', result.errors);
-                        throw new Error(`${mutation.columnName}: ${result.errors[0].message}`);
                     }
-                    
-                    console.log('✅ Successfully saved', mutation.columnName);
-                }
-                
-                // Handle file upload if present
-                const fileField = taskCard.querySelector('[data-field="file"]');
-                if (fileField && fileField.files && fileField.files.length > 0) {
-                    console.log('📎 Uploading file...');
-                    await uploadFileSync(taskId, fileField);
-                    console.log('✅ File uploaded successfully');
-                }
-                
-                showSavingIndicator('saved', '✅ Task saved!');
-                console.log('🎉 ALL SAVES COMPLETED SUCCESSFULLY!');
-                
-                // Update UI
-                const statusValue = statusField ? statusField.value : '';
-                if (statusValue) {
-                    updateTaskBadge(taskId, statusValue);
-                    updateProgress();
-                }
-                
-            } catch (error) {
-                showSavingIndicator('error', '❌ Save failed: ' + error.message);
-                console.error('❌ SAVE FAILED:', error);
-                alert('Save failed: ' + error.message + '\n\nCheck browser console (F12) for details.');
-            }
-        }
-        
-        async function testSaveFunction() {
-            console.log('\n🧪 RUNNING TEST SAVE FUNCTION');
-            
-            const firstTaskCard = document.querySelector('.task-card');
-            if (!firstTaskCard) {
-                alert('No tasks loaded. Please select a property and checklist first.');
-                return;
-            }
-            
-            const taskId = firstTaskCard.dataset.taskId;
-            console.log('🎯 Testing with first task ID:', taskId);
-            
-            const testStatusText = 'In Progress';
-            const testStatusIndex = STATUS_LABELS[testStatusText];
-            const testValue = { label: testStatusIndex };
-            const jsonString = JSON.stringify(testValue);
-            const escapedForGraphQL = jsonString.replace(/"/g, '\\"');
-            
-            console.log('📝 Test status text:', testStatusText);
-            console.log('📝 Test status index:', testStatusIndex);
-            console.log('📝 Test value object:', testValue);
-            console.log('📝 JSON string:', jsonString);
-            console.log('📝 Escaped for GraphQL:', escapedForGraphQL);
-            console.log('📝 In GraphQL will be: "' + escapedForGraphQL + '"');
-            
-            const query = `
-                mutation {
-                    change_simple_column_value(
-                        item_id: ${taskId},
-                        board_id: ${BOARD_ID},
-                        column_id: "${COLUMNS.STATUS}",
-                        value: "${escapedForGraphQL}"
-                    ) {
-                        id
-                        name
-                        column_values(ids: ["${COLUMNS.STATUS}"]) {
+                `;
+
+                variables = {
+                    itemId: String(taskId),
+                    boardId: String(BOARD_ID),
+                    columnId: mutation.column,
+                    value: String(mutation.value) // ✅ plain label/text
+                };
+            } else {
+                query = `
+                    mutation ($itemId: ID!, $boardId: ID!, $columnId: String!, $value: JSON!) {
+                        change_column_value(
+                            item_id: $itemId,
+                            board_id: $boardId,
+                            column_id: $columnId,
+                            value: $value
+                        ) {
                             id
-                            value
-                            text
+                            name
+                            column_values(ids: [$columnId]) {
+                                id
+                                value
+                                text
+                            }
                         }
                     }
+                `;
+
+                variables = {
+                    itemId: String(taskId),
+                    boardId: String(BOARD_ID),
+                    columnId: mutation.column,
+                    value: JSON.stringify(mutation.value) // ✅ JSON for date/people
+                };
+            }
+
+            console.log('GraphQL Variables:', variables);
+
+            const result = await mondayAPI(query, variables);
+            console.log('✅ Save result for', mutation.columnName, ':', result);
+
+            if (result.errors) {
+                console.error('❌ ERROR for', mutation.columnName, ':', result.errors);
+                throw new Error(`${mutation.columnName}: ${result.errors[0].message}`);
+            }
+
+            console.log('✅ Successfully saved', mutation.columnName);
+        }
+
+        // Handle file upload if present
+        const fileField = taskCard.querySelector('[data-field="file"]');
+        if (fileField && fileField.files && fileField.files.length > 0) {
+            console.log('📎 Uploading file...');
+            await uploadFileSync(taskId, fileField);
+            console.log('✅ File uploaded successfully');
+        }
+
+        showSavingIndicator('saved', '✅ Task saved!');
+        console.log('🎉 ALL SAVES COMPLETED SUCCESSFULLY!');
+
+        // Update UI
+        const statusValue = statusField ? statusField.value : '';
+        if (statusValue) {
+            updateTaskBadge(taskId, statusValue);
+            updateProgress();
+        }
+
+    } catch (error) {
+        showSavingIndicator('error', '❌ Save failed: ' + error.message);
+        console.error('❌ SAVE FAILED:', error);
+        alert('Save failed: ' + error.message + '\n\nCheck browser console (F12) for details.');
+    }
+}
+        
+        async function testSaveFunction() {
+    console.log('\n🧪 RUNNING TEST SAVE FUNCTION');
+
+    const firstTaskCard = document.querySelector('.task-card');
+    if (!firstTaskCard) {
+        alert('No tasks loaded. Please select a property and checklist first.');
+        return;
+    }
+
+    const taskId = firstTaskCard.dataset.taskId;
+    console.log('🎯 Testing with first task ID:', taskId);
+
+    const testStatusText = 'In Progress'; // ✅ send plain label text
+    console.log('📝 Test status text:', testStatusText);
+
+    const query = `
+        mutation ($itemId: ID!, $boardId: ID!, $columnId: String!, $value: String!) {
+            change_simple_column_value(
+                item_id: $itemId,
+                board_id: $boardId,
+                column_id: $columnId,
+                value: $value
+            ) {
+                id
+                name
+                column_values(ids: [$columnId]) {
+                    id
+                    value
+                    text
                 }
-            `;
-            
-            console.log('🚀 Test Query:', query);
-            
-            try {
-                showSavingIndicator('saving', '🧪 Running test...');
-                const result = await mondayAPI(query);
-                
-                console.log('✅ Test Result:', result);
-                
-                if (result.errors) {
-                    console.error('❌ Test FAILED:', result.errors);
-                    showSavingIndicator('error', '❌ Test failed');
-                    alert('Test FAILED:\n\n' + JSON.stringify(result.errors, null, 2) + '\n\nCheck console for details.');
-                } else {
-                    console.log('✅ Test PASSED!');
-                    console.log('📊 Updated column value:', result.data.change_simple_column_value.column_values);
-                    showSavingIndicator('saved', '✅ Test passed!');
-                    alert('Test PASSED! ✅\n\nStatus successfully set to "' + testStatusText + '" (index: ' + testStatusIndex + ') on task: ' + result.data.change_simple_column_value.name + '\n\nCheck Monday.com to verify!');
-                    
-                    // Refresh to show the change
-                    setTimeout(() => onChecklistChange(), 2000);
-                }
-            } catch (error) {
-                console.error('❌ Test Error:', error);
-                showSavingIndicator('error', '❌ Test error');
-                alert('Test ERROR:\n\n' + error.message);
             }
         }
+    `;
+
+    const variables = {
+        itemId: String(taskId),
+        boardId: String(BOARD_ID),
+        columnId: COLUMNS.STATUS,
+        value: testStatusText
+    };
+
+    console.log('🚀 Test Query (variables):', variables);
+
+    try {
+        showSavingIndicator('saving', '🧪 Running test...');
+        const result = await mondayAPI(query, variables);
+
+        console.log('✅ Test Result:', result);
+
+        if (result.errors) {
+            console.error('❌ Test FAILED:', result.errors);
+            showSavingIndicator('error', '❌ Test failed');
+            alert('Test FAILED:\n\n' + JSON.stringify(result.errors, null, 2) + '\n\nCheck console for details.');
+        } else {
+            console.log('✅ Test PASSED!');
+            console.log('📊 Updated column value:', result.data.change_simple_column_value.column_values);
+            showSavingIndicator('saved', '✅ Test passed!');
+            alert('Test PASSED! ✅\n\nStatus successfully set to "' + testStatusText + '" on task: ' + result.data.change_simple_column_value.name + '\n\nCheck Monday.com to verify!');
+
+            setTimeout(() => onChecklistChange(), 2000);
+        }
+    } catch (error) {
+        console.error('❌ Test Error:', error);
+        showSavingIndicator('error', '❌ Test error');
+        alert('Test ERROR:\n\n' + error.message);
+    }
+}
         
         function updateTaskBadge(taskId, status) {
             const taskCard = document.querySelector(`[data-task-id="${taskId}"]`);
