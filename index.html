@@ -1068,21 +1068,30 @@
             const file = fileInput.files[0];
             
             try {
-                const formData = new FormData();
-                
-                const query = `
-                    mutation {
-                        add_file_to_column(
-                            item_id: ${taskId},
-                            column_id: "${COLUMNS.FILES}"
-                        ) {
-                            id
-                        }
+                // Use GraphQL multipart request specification
+                const query = `mutation add_file($file: File!) {
+                    add_file_to_column(item_id: ${taskId}, column_id: "${COLUMNS.FILES}", file: $file) {
+                        id
                     }
-                `;
+                }`;
                 
+                const formData = new FormData();
                 formData.append('query', query);
-                formData.append('image', file, file.name);
+                
+                // Map specification for multipart upload
+                const map = JSON.stringify({
+                    "file": ["variables.file"]
+                });
+                formData.append('map', map);
+                
+                // Variables with null placeholder
+                const variables = JSON.stringify({
+                    file: null
+                });
+                formData.append('variables', variables);
+                
+                // The actual file mapped to "file" key
+                formData.append('file', file, file.name);
                 
                 console.log('📎 Uploading file:', file.name);
                 console.log('📎 Task ID:', taskId);
