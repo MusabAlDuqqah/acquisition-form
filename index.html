@@ -202,6 +202,27 @@
             padding: 40px;
             color: #666;
         }
+        .save-button {
+            background: #0073ea;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            width: 100%;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .save-button:hover {
+            background: #0060c0;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,115,234,0.3);
+        }
+        .save-button:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -212,7 +233,7 @@
         
         <div class="form-container">
             <div class="auto-save-notice">
-                <strong>💡 Auto-Save Enabled:</strong> All changes are saved automatically in real-time!
+                <strong>💡 How to Save:</strong> Make your changes and click the "💾 Save Task" button on each task to save to Monday.com
             </div>
             
             <div class="form-group">
@@ -272,16 +293,6 @@
         
         let currentChecklistType = '';
         let teamMembers = [];
-        let commentTimers = {};
-        
-        // Debounce helper
-        function debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func(...args), wait);
-            };
-        }
         
         function showSavingIndicator(status, message) {
             const indicator = document.getElementById('savingIndicator');
@@ -525,7 +536,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Status</label>
-                                <select onchange="updateStatus('${task.id}', this.value)">
+                                <select data-field="status">
                                     <option value="">-- Select --</option>
                                     <option value="Not Started" ${status === 'Not Started' ? 'selected' : ''}>Not Started</option>
                                     <option value="In Progress" ${status === 'In Progress' ? 'selected' : ''}>In Progress</option>
@@ -541,7 +552,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Received Docs</label>
-                                <select onchange="updateReceivedDocs('${task.id}', this.value)">
+                                <select data-field="received-docs">
                                     <option value="">-- Select --</option>
                                     <option value="Yes" ${receivedValue === 'Yes' ? 'selected' : ''}>Yes</option>
                                     <option value="No" ${receivedValue === 'No' ? 'selected' : ''}>No</option>
@@ -556,7 +567,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Due Date</label>
-                                <input type="date" value="${dueDate}" onchange="updateDate('${task.id}', '${COLUMNS.DUE_DATE}', this.value)">
+                                <input type="date" data-field="due-date" value="${dueDate}">
                             </div>
                         `;
                     }
@@ -566,7 +577,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Completion Date</label>
-                                <input type="date" value="${compDate}" onchange="updateDate('${task.id}', '${COLUMNS.COMPLETION_DATE}', this.value)">
+                                <input type="date" data-field="completion-date" value="${compDate}">
                             </div>
                         `;
                     }
@@ -590,7 +601,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Assigned Responsibility</label>
-                                <select multiple onchange="updatePeople('${task.id}', this)" style="height: 100px;">
+                                <select multiple data-field="responsibility" style="height: 100px;">
                                     ${teamMembers.map(member => `
                                         <option value="${member.id}" ${assignedIds.includes(member.id) ? 'selected' : ''}>
                                             ${member.name}
@@ -607,7 +618,7 @@
                         html += `
                             <div class="field-group">
                                 <label>Comments</label>
-                                <textarea rows="3" oninput="debouncedUpdateComments('${task.id}', this.value)">${comments}</textarea>
+                                <textarea rows="3" data-field="comments">${comments}</textarea>
                             </div>
                         `;
                     }
@@ -629,12 +640,16 @@
                         html += `
                             <div class="field-group">
                                 <label>Upload ${files.length > 0 ? 'Additional' : ''} File</label>
-                                <input type="file" onchange="uploadFile('${task.id}', this)">
+                                <input type="file" data-field="file">
                             </div>
                         `;
                     }
                     
-                    html += `</div>`;
+                    html += `
+                        <button class="save-button" onclick="saveTask('${task.id}')">
+                            💾 Save Task
+                        </button>
+                    </div>`;
                 });
                 
                 html += `</div>`;
@@ -649,35 +664,112 @@
             document.getElementById('progressText').textContent = `${completedTasks} of ${totalTasks} tasks completed`;
         }
         
-        async function updateStatus(taskId, status) {
-            if (!status) return;
+        async function saveTask(taskId) {
+            const taskCard = document.querySelector(`[data-task-id="${taskId}"]`);
+            if (!taskCard) return;
             
-            showSavingIndicator('saving', '💾 Saving...');
+            showSavingIndicator('saving', '💾 Saving task...');
             
+            const mutations = [];
+            
+            // Get status
+            const statusField = taskCard.querySelector('[data-field="status"]');
+            if (statusField && statusField.value) {
+                mutations.push({
+                    column: COLUMNS.STATUS,
+                    value: JSON.stringify({ label: statusField.value })
+                });
+            }
+            
+            // Get received docs
+            const receivedDocsField = taskCard.querySelector('[data-field="received-docs"]');
+            if (receivedDocsField && receivedDocsField.value) {
+                mutations.push({
+                    column: COLUMNS.RECEIVED_DOCS,
+                    value: JSON.stringify({ label: receivedDocsField.value })
+                });
+            }
+            
+            // Get due date
+            const dueDateField = taskCard.querySelector('[data-field="due-date"]');
+            if (dueDateField && dueDateField.value) {
+                mutations.push({
+                    column: COLUMNS.DUE_DATE,
+                    value: JSON.stringify({ date: dueDateField.value })
+                });
+            }
+            
+            // Get completion date
+            const completionDateField = taskCard.querySelector('[data-field="completion-date"]');
+            if (completionDateField && completionDateField.value) {
+                mutations.push({
+                    column: COLUMNS.COMPLETION_DATE,
+                    value: JSON.stringify({ date: completionDateField.value })
+                });
+            }
+            
+            // Get responsibility
+            const responsibilityField = taskCard.querySelector('[data-field="responsibility"]');
+            if (responsibilityField) {
+                const selectedOptions = Array.from(responsibilityField.selectedOptions);
+                const personIds = selectedOptions.map(opt => parseInt(opt.value));
+                if (personIds.length > 0) {
+                    const value = {
+                        personsAndTeams: personIds.map(id => ({ id, kind: "person" }))
+                    };
+                    mutations.push({
+                        column: COLUMNS.RESPONSIBILITY,
+                        value: JSON.stringify(value)
+                    });
+                }
+            }
+            
+            // Get comments
+            const commentsField = taskCard.querySelector('[data-field="comments"]');
+            if (commentsField && commentsField.value.trim()) {
+                mutations.push({
+                    column: COLUMNS.COMMENTS,
+                    value: JSON.stringify(commentsField.value)
+                });
+            }
+            
+            // Save all fields
             try {
-                const query = `
-                    mutation {
-                        change_simple_column_value(
-                            item_id: ${taskId},
-                            board_id: ${BOARD_ID},
-                            column_id: "${COLUMNS.STATUS}",
-                            value: ${JSON.stringify(JSON.stringify({ label: status }))}
-                        ) {
-                            id
+                for (const mutation of mutations) {
+                    const query = `
+                        mutation {
+                            change_simple_column_value(
+                                item_id: ${taskId},
+                                board_id: ${BOARD_ID},
+                                column_id: "${mutation.column}",
+                                value: ${JSON.stringify(mutation.value)}
+                            ) {
+                                id
+                            }
                         }
-                    }
-                `;
+                    `;
+                    
+                    await mondayAPI(query);
+                }
                 
-                await mondayAPI(query);
-                showSavingIndicator('saved', '✅ Saved!');
+                // Handle file upload if present
+                const fileField = taskCard.querySelector('[data-field="file"]');
+                if (fileField && fileField.files && fileField.files.length > 0) {
+                    await uploadFile(taskId, fileField);
+                }
                 
-                // Update UI locally instead of reloading
-                updateTaskBadge(taskId, status);
-                updateProgress();
+                showSavingIndicator('saved', '✅ Task saved!');
+                
+                // Update UI
+                const statusValue = statusField ? statusField.value : '';
+                if (statusValue) {
+                    updateTaskBadge(taskId, statusValue);
+                    updateProgress();
+                }
                 
             } catch (error) {
                 showSavingIndicator('error', '❌ Save failed');
-                console.error(error);
+                console.error('Error saving task:', error);
             }
         }
         
@@ -716,131 +808,6 @@
             document.getElementById('progressText').textContent = `${completed} of ${total} tasks completed`;
         }
         
-        async function updateReceivedDocs(taskId, value) {
-            if (!value) return;
-            
-            showSavingIndicator('saving', '💾 Saving...');
-            
-            try {
-                const query = `
-                    mutation {
-                        change_simple_column_value(
-                            item_id: ${taskId},
-                            board_id: ${BOARD_ID},
-                            column_id: "${COLUMNS.RECEIVED_DOCS}",
-                            value: ${JSON.stringify(JSON.stringify({ label: value }))}
-                        ) {
-                            id
-                        }
-                    }
-                `;
-                
-                await mondayAPI(query);
-                showSavingIndicator('saved', '✅ Saved!');
-                
-            } catch (error) {
-                showSavingIndicator('error', '❌ Save failed');
-                console.error(error);
-            }
-        }
-        
-        async function updateDate(taskId, columnId, date) {
-            if (!date) return;
-            
-            showSavingIndicator('saving', '💾 Saving...');
-            
-            try {
-                const query = `
-                    mutation {
-                        change_simple_column_value(
-                            item_id: ${taskId},
-                            board_id: ${BOARD_ID},
-                            column_id: "${columnId}",
-                            value: ${JSON.stringify(JSON.stringify({ date: date }))}
-                        ) {
-                            id
-                        }
-                    }
-                `;
-                
-                await mondayAPI(query);
-                showSavingIndicator('saved', '✅ Saved!');
-                
-            } catch (error) {
-                showSavingIndicator('error', '❌ Save failed');
-                console.error(error);
-            }
-        }
-        
-        async function updatePeople(taskId, selectElement) {
-            const selectedOptions = Array.from(selectElement.selectedOptions);
-            const personIds = selectedOptions.map(opt => parseInt(opt.value));
-            
-            showSavingIndicator('saving', '💾 Saving...');
-            
-            try {
-                const value = {
-                    personsAndTeams: personIds.map(id => ({ id, kind: "person" }))
-                };
-                
-                const query = `
-                    mutation {
-                        change_simple_column_value(
-                            item_id: ${taskId},
-                            board_id: ${BOARD_ID},
-                            column_id: "${COLUMNS.RESPONSIBILITY}",
-                            value: ${JSON.stringify(JSON.stringify(value))}
-                        ) {
-                            id
-                        }
-                    }
-                `;
-                
-                await mondayAPI(query);
-                showSavingIndicator('saved', '✅ Saved!');
-                
-            } catch (error) {
-                showSavingIndicator('error', '❌ Save failed');
-                console.error(error);
-            }
-        }
-        
-        async function updateComments(taskId, comments) {
-            showSavingIndicator('saving', '💾 Saving...');
-            
-            try {
-                const query = `
-                    mutation {
-                        change_simple_column_value(
-                            item_id: ${taskId},
-                            board_id: ${BOARD_ID},
-                            column_id: "${COLUMNS.COMMENTS}",
-                            value: ${JSON.stringify(JSON.stringify(comments))}
-                        ) {
-                            id
-                        }
-                    }
-                `;
-                
-                await mondayAPI(query);
-                showSavingIndicator('saved', '✅ Saved!');
-                
-            } catch (error) {
-                showSavingIndicator('error', '❌ Save failed');
-                console.error(error);
-            }
-        }
-        
-        // Debounced version - waits 1.5 seconds after typing stops
-        const debouncedUpdateComments = (taskId, comments) => {
-            if (commentTimers[taskId]) {
-                clearTimeout(commentTimers[taskId]);
-            }
-            
-            commentTimers[taskId] = setTimeout(() => {
-                updateComments(taskId, comments);
-            }, 1500);
-        };
         
         async function uploadFile(taskId, fileInput) {
             if (!fileInput.files || fileInput.files.length === 0) return;
