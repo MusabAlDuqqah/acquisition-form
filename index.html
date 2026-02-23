@@ -312,9 +312,9 @@
         
         // Received Docs label mappings (we'll update this after checking)
         const RECEIVED_DOCS_LABELS = {
-            'Yes': 0,
-            'No': 1,
-            'N/A': 2
+            'Yes': 1,
+            'No': 2,
+            'N/A': 5
         };
         
         const CHECKLIST_FIELDS = {
@@ -614,9 +614,9 @@
                         
                         // Map index back to text for dropdown
                         let receivedText = '';
-                        if (receivedIndex === 0) receivedText = 'Yes';
-                        else if (receivedIndex === 1) receivedText = 'No';
-                        else if (receivedIndex === 2) receivedText = 'N/A';
+                        if (receivedIndex === 1) receivedText = 'Yes';
+                        else if (receivedIndex === 2) receivedText = 'No';
+                        else if (receivedIndex === 5) receivedText = 'N/A';
                         
                         html += `
                             <div class="field-group">
@@ -857,9 +857,14 @@
                     console.log('Raw value:', mutation.rawValue);
                     console.log('Formatted value:', mutation.value);
                     
-                    // IMPORTANT: Monday.com expects SINGLE stringified value
-                    const stringifiedValue = JSON.stringify(mutation.value);
-                    console.log('Stringified ONCE (this is what we send):', stringifiedValue);
+                    // Convert value to JSON string
+                    const jsonString = JSON.stringify(mutation.value);
+                    console.log('JSON string:', jsonString);
+                    
+                    // Escape for GraphQL (replace " with \")
+                    const escapedForGraphQL = jsonString.replace(/"/g, '\\"');
+                    console.log('Escaped for GraphQL:', escapedForGraphQL);
+                    console.log('In GraphQL will be: "' + escapedForGraphQL + '"');
                     
                     const query = `
                         mutation {
@@ -867,7 +872,7 @@
                                 item_id: ${taskId},
                                 board_id: ${BOARD_ID},
                                 column_id: "${mutation.column}",
-                                value: ${JSON.stringify(stringifiedValue)}
+                                value: "${escapedForGraphQL}"
                             ) {
                                 id
                                 name
@@ -934,13 +939,15 @@
             const testStatusText = 'In Progress';
             const testStatusIndex = STATUS_LABELS[testStatusText];
             const testValue = { label: testStatusIndex };
-            const stringifiedOnce = JSON.stringify(testValue);
+            const jsonString = JSON.stringify(testValue);
+            const escapedForGraphQL = jsonString.replace(/"/g, '\\"');
             
             console.log('📝 Test status text:', testStatusText);
             console.log('📝 Test status index:', testStatusIndex);
             console.log('📝 Test value object:', testValue);
-            console.log('📝 Stringified ONCE:', stringifiedOnce);
-            console.log('📝 For GraphQL (escaped):', JSON.stringify(stringifiedOnce));
+            console.log('📝 JSON string:', jsonString);
+            console.log('📝 Escaped for GraphQL:', escapedForGraphQL);
+            console.log('📝 In GraphQL will be: "' + escapedForGraphQL + '"');
             
             const query = `
                 mutation {
@@ -948,7 +955,7 @@
                         item_id: ${taskId},
                         board_id: ${BOARD_ID},
                         column_id: "${COLUMNS.STATUS}",
-                        value: ${JSON.stringify(stringifiedOnce)}
+                        value: "${escapedForGraphQL}"
                     ) {
                         id
                         name
